@@ -1,7 +1,6 @@
 import argparse
 
-from .core import MBType
-from .linetrees import *
+from . import *
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser('''
@@ -10,4 +9,4 @@ if __name__ == '__main__':
     args = argparser.parse_args()
 
     for cls in MBType.inheritors():
-        sys.stderr.write(cls.report_api())
+        sys.stdout.write(cls.report_api())

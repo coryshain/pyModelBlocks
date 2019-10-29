@@ -1,10 +1,5 @@
-import re
-import os
-import numpy as np
-
-from .util import tostderr
-from .shell import *
 from .core import *
+from . import tree
 
 
 class LineTrees(MBType):
@@ -14,89 +9,28 @@ class LineTrees(MBType):
         "Abstract base class for linetrees types.\n"
     )
 
-    def __init__(
-            self,
-            name,
-            dump=False
-    ):
-        super(LineTrees, self).__init__(name, dump=dump)
-
-
-class LineTreesNatstor(LineTrees):
-    MANIP = 'naturalstories'
-    DESCR_SHORT = 'naturalstories gold linetrees'
-    DESCR_LONG = (
-        "Source trees (hand-annotated) for the Natural Stories corpus.\n"
-    )
-
-    def __init__(
-            self,
-            name,
-            dump=False
-    ):
-        super(LineTreesNatstor, self).__init__(name, dump=dump)
-
-    def build(self, dry_run=False):
-        outstr = '(X (X This) (X (X is) (X (X a) (X (X test)))))\n' * 100
-
-        cmd = [
-            ShellCommand('mkdir', ['-p', self.directory]),
-            ShellCommand('echo', [outstr], stdout=self.output_buffer)
-        ]
-
-        return cmd
-
-
-class LineTreesNatstor2(LineTrees):
-    MANIP = 'naturalstories'
-    DESCR_SHORT = 'naturalstories gold linetrees 2'
-    DESCR_LONG = (
-        "Alternative annotation for the Natural Stories corpus.\n"
-    )
-
-    def __init__(
-            self,
-            name,
-            dump=False
-    ):
-        super(LineTreesNatstor2, self).__init__(name, dump=dump)
-
-    def build(self, dry_run=False):
-        outstr = '(X (X This) (X (X is) (X (X a) (X (X test)))))\n' * 100
-
-        cmd = [
-            ShellCommand('mkdir', ['-p', self.directory]),
-            ShellCommand('echo', [outstr], stdout=self.output_buffer)
-        ]
-
-        return cmd
-
 
 class LineTreesUpper(LineTrees):
     MANIP = '.upper'
     PREREQ_TYPES = [LineTrees]
     DESCR_SHORT = 'uppercased linetrees'
     DESCR_LONG = (
-        "Convert any text in a linetrees file to uppercase.\n"
+        "Uppercase words in trees.\n"
     )
 
-    def __init__(
-            self,
-            name,
-            dump=False
-    ):
-        super(LineTreesUpper, self).__init__(name, dump=dump)
+    def body(self):
+        def out():
+            inputs = self.prereqs[0].data
+            t = tree.Tree()
+            outputs = []
+            for x in inputs:
+                t.read(x)
+                t.upper()
+                outputs.append(str(t))
 
-    def build(self, dry_run=False):
-        assert len(self.prereqs) == 1, 'Expected exactly 1 input to %s, got %d' % (type(self).__name__, len(self.prereqs))
+            return outputs
 
-        if dry_run:
-            outputs = None
-        else:
-            inputs = self.prereqs[0].content.data
-            outputs = [x.upper() for x in inputs]
-
-        return Dump(outputs, stdout=self.output_buffer, descr=self.DESCR_SHORT)
+        return out
 
 
 class LineTreesLower(LineTrees):
@@ -104,26 +38,22 @@ class LineTreesLower(LineTrees):
     PREREQ_TYPES = [LineTrees]
     DESCR_SHORT = 'lowercased linetrees'
     DESCR_LONG = (
-        "Convert any text in a linetrees file to lowercase.\n"
+        "Lowercase words in trees.\n"
     )
+    
+    def body(self):
+        def out():
+            inputs = self.prereqs[0].data
+            t = tree.Tree()
+            outputs = []
+            for x in inputs:
+                t.read(x)
+                t.lower()
+                outputs.append(str(t))
+                
+            return outputs
 
-    def __init__(
-            self,
-            name,
-            dump=False
-    ):
-        super(LineTreesLower, self).__init__(name, dump=dump)
-
-    def build(self, dry_run=False):
-        assert len(self.prereqs) == 1, 'Expected exactly 1 input to %s, got %d' % (type(self).__name__, len(self.prereqs))
-
-        if dry_run:
-            outputs = None
-        else:
-            inputs = self.prereqs[0].content.data
-            outputs = [x.lower() for x in inputs]
-
-        return Dump(outputs, stdout=self.output_buffer, descr=self.DESCR_SHORT)
+        return out
 
 
 class LineTreesFirst(LineTrees):
@@ -135,25 +65,14 @@ class LineTreesFirst(LineTrees):
         "Truncate linetrees file to contain the first N lines.\n"
     )
 
-    def __init__(
-            self,
-            name,
-            dump=False
-    ):
-        super(LineTreesFirst, self).__init__(name, dump=dump)
+    def body(self):
+        def out():
+            parsed = self.parse_path(self.path)[0]
+            n = parsed['n']
 
-    def build(self, dry_run=False):
-        assert len(self.prereqs) == 1, 'Expected exactly 1 input to %s, got %d' % (type(self).__name__, len(self.prereqs))
+            return self.prereqs[0].data[:n]
 
-        parsed = self.parse_path(self.path)[0]
-        n = parsed[1][1]
-
-        if dry_run:
-            outputs = None
-        else:
-            outputs = self.prereqs[0].content.data[:n]
-
-        return Dump(outputs, stdout=self.output_buffer, descr=self.DESCR_SHORT)
+        return out
 
 
 class LineTreesLast(LineTrees):
@@ -165,26 +84,14 @@ class LineTreesLast(LineTrees):
         "Truncate linetrees file to contain the last N lines.\n"
     )
 
-    def __init__(
-            self,
-            name,
-            dump=False
-    ):
-        super(LineTreesLast, self).__init__(name, dump=dump)
+    def body(self):
+        def out():
+            parsed = self.parse_path(self.path)[0]
+            n = parsed['n']
 
-    def build(self, dry_run=False):
-        assert len(self.prereqs) == 1, 'Expected exactly 1 input to %s, got %d' % (type(self).__name__, len(self.prereqs))
+            return self.prereqs[0].data[-n:]
 
-        parsed = self.parse_path(self.path)[0]
-        n = parsed[1][1]
-
-        if dry_run:
-            outputs = None
-        else:
-            inputs = self.prereqs[0].content.data[-n:]
-            outputs = inputs
-
-        return Dump(outputs, stdout=self.output_buffer, descr=self.DESCR_SHORT)
+        return out
 
 
 class LineTreesMerged(LineTrees):
@@ -196,20 +103,14 @@ class LineTreesMerged(LineTrees):
         "Concatenate linetrees files.\n"
     )
 
-    def __init__(
-            self,
-            name,
-            dump=False
-    ):
-        super(LineTreesMerged, self).__init__(name, dump=dump)
-
-    def build(self, dry_run=False):
-        if dry_run:
-            outputs = None
-        else:
-            inputs = self.prereqs
+    def body(self):
+        def out():
             outputs = []
-            for x in inputs:
-                outputs += x.content.data
+            for x in self.prereqs:
+                outputs += x.data
+            return outputs
+        return out
 
-        return Dump(outputs, stdout=self.output_buffer, descr=self.DESCR_SHORT)
+
+class LineTreesMergedPrefix(LineTreesMerged):
+    HAS_PREFIX = True
