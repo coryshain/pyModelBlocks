@@ -180,6 +180,6 @@ class PTBSections(LineTrees):
         def out():
             outputs = []
             for x in self.prereqs:
-                outputs += x.data
+                outputs += x.get()
             return outputs
         return out

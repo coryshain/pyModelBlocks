@@ -31,7 +31,7 @@ class LineTreesNatstorPTB(LineTrees):
     )
 
     def body(self):
-        out = "cat %s | sed 's/\\r\\n/\\r/g' | perl %s > %s" % (
+        out = "cat %s | sed 's/\\r//g' | perl %s > %s" % (
             self.static_prereqs[0].path,
             self.static_prereqs[1].path,
             self.path

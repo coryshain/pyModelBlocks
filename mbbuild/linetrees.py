@@ -8,6 +8,10 @@ class LineTrees(MBType):
     DESCR_LONG = (
         "Abstract base class for linetrees types.\n"
     )
+    
+    @classmethod
+    def abstract(cls):
+        return cls.__name__ == 'LineTrees'
 
 
 class LineTreesUpper(LineTrees):
@@ -19,8 +23,7 @@ class LineTreesUpper(LineTrees):
     )
 
     def body(self):
-        def out():
-            inputs = self.prereqs[0].data
+        def out(inputs):
             t = tree.Tree()
             outputs = []
             for x in inputs:
@@ -42,8 +45,7 @@ class LineTreesLower(LineTrees):
     )
     
     def body(self):
-        def out():
-            inputs = self.prereqs[0].data
+        def out(inputs):
             t = tree.Tree()
             outputs = []
             for x in inputs:
@@ -59,18 +61,15 @@ class LineTreesLower(LineTrees):
 class LineTreesFirst(LineTrees):
     MANIP = 'first'
     PREREQ_TYPES = [LineTrees]
-    ARGS = [Arg('n', dtype=int, positional=True)]
+    ARG_TYPES = [Arg('n', dtype=int, positional=True)]
     DESCR_SHORT = 'first N linetrees'
     DESCR_LONG = (
         "Truncate linetrees file to contain the first N lines.\n"
     )
 
     def body(self):
-        def out():
-            parsed = self.parse_path(self.path)[0]
-            n = parsed['n']
-
-            return self.prereqs[0].data[:n]
+        def out(inputs, n):
+            return inputs[:n]
 
         return out
 
@@ -78,18 +77,15 @@ class LineTreesFirst(LineTrees):
 class LineTreesLast(LineTrees):
     MANIP = 'last'
     PREREQ_TYPES = [LineTrees]
-    ARGS = [Arg('n', dtype=int, positional=True)]
+    ARG_TYPES = [Arg('n', dtype=int, positional=True)]
     DESCR_SHORT = 'last N linetrees'
     DESCR_LONG = (
         "Truncate linetrees file to contain the last N lines.\n"
     )
 
     def body(self):
-        def out():
-            parsed = self.parse_path(self.path)[0]
-            n = parsed['n']
-
-            return self.prereqs[0].data[-n:]
+        def out(inputs, n):
+            return inputs[-n:]
 
         return out
 
@@ -104,10 +100,10 @@ class LineTreesMerged(LineTrees):
     )
 
     def body(self):
-        def out():
+        def out(*args):
             outputs = []
-            for x in self.prereqs:
-                outputs += x.data
+            for x in args:
+                outputs += x
             return outputs
         return out
 
