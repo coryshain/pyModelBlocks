@@ -122,19 +122,19 @@ class PTBSections(LineTrees):
 
     @classmethod
     def parse_path(cls, path):
-        out = None
+        out = {}
         path = os.path.normpath(path)
         if cls.match(path):
             parsed = cls.path_parser(path)
             prereq_types = cls.prereq_types(path)
-            out = []
+            prereqs = []
             for p in prereq_types:
                 basename = parsed['basename']
                 corpus = parsed['corpus']
                 sect = p.section()
-                out.append({
-                    'basename': os.path.join(basename, corpus + sect)
-                })
+                prereqs.append(os.path.join(basename, corpus + sect + p.suffix()))
+        out['prereqs'] = prereqs
+
         return out
 
     @classmethod
@@ -177,9 +177,9 @@ class PTBSections(LineTrees):
         return '(<DIR>/){wsj,swbd,brown}<START>to<END>.linetrees'
 
     def body(self):
-        def out():
+        def out(*args):
             outputs = []
-            for x in self.prereqs:
-                outputs += x.get()
+            for x in args:
+                outputs += x
             return outputs
         return out
