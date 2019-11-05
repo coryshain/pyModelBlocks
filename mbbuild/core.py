@@ -14,6 +14,12 @@ else:
 from mbbuild.util.general import tostderr
 
 
+#####################################
+#
+# GLOBAL CONSTANTS
+#
+#####################################
+
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_RESOURCES_DIR = os.path.join(ROOT_DIR, 'static_resources')
 DEFAULT_PATH = os.path.join(ROOT_DIR, '.defaults.ini')
@@ -44,7 +50,6 @@ HISTORY_SETTINGS = HISTORY['settings']
 
 CFLAGS = USER_SETTINGS.get('cflags', DEFAULT_SETTINGS['cflags'])
 
-
 DELIM = [
     '.',
     '-',
@@ -72,6 +77,16 @@ PUNC = [
     "-LCB-",
     "-RCB-"
 ]
+
+
+
+
+
+#####################################
+#
+# UTILITY METHODS
+#
+#####################################
 
 
 def normalize_class_name(name):
@@ -202,6 +217,762 @@ def decrement_delimiters(s):
             out += c
 
     return out
+
+
+
+
+
+#####################################
+#
+# ABSTRACT MB TYPES
+#
+#####################################
+
+
+class MBType(object):
+    SUFFIX = ''
+    MANIP = ''
+    PATTERN_PREREQ_TYPES = []
+    STATIC_PREREQ_TYPES = []
+    ARG_TYPES = []
+    CONFIG_KEYS = []
+    FILE_TYPE = 'text'  # one of ['text', 'python', None], for text, python-readable binary (pickle) or other (non-python-readable) file, respectively
+
+    REPEATABLE_PREREQ = False
+
+    HAS_PREFIX = False
+    HAS_SUFFIX = False
+
+    DESCR_SHORT = 'data'
+    DESCR_LONG = (
+        "Abstract base class for ModelBlocks types.\n"
+    )
+
+    def __init__(self, path):
+        path = os.path.normpath(path)
+        if path.endswith(self.suffix()):
+            if self.suffix() != '':
+                path = path[:-len(self.suffix())]
+        self.directory = os.path.dirname(path)
+        self.basename = os.path.basename(path)
+        self.path = os.path.join(self.directory, self.basename + self.suffix())
+        args = self.parse_path(self.path)
+
+        if args is not None:
+            if 'basename' in args:
+                del args['basename']
+            if 'prereqs' in args:
+                del args['prereqs']
+            if 'static_prereqs' in args:
+                del args['static_prereqs']
+
+        self.args = args
+
+        self.pattern_prereqs_all_paths_src = None
+        self.pattern_prereqs_src = None
+        self.static_prereqs_src = None
+        self.other_prereqs_all_paths_src = None
+        self.other_prereqs_src = None
+        self.dependencies = None
+
+        self.data = None
+        self.set_data()
+
+        self.dump = os.path.exists(self.path)
+
+        self.graph = None
+        self.intermediate = not self.dump
+
+        self.fn_dry_run = None
+        self.fn = None
+        self.built = False
+        self.process_scheduler = None
+
+    @property
+    def timestamp(self):
+        return get_timestamp(self.path)
+
+    @property
+    def max_timestamp(self):
+        max_timestamp = self.timestamp
+        for k, old, new in self.config_values():
+            if old != new:
+                max_timestamp = np.inf
+                break
+        if max_timestamp < np.inf:
+            for s in self.pattern_prereqs_src + self.static_prereqs_src + self.other_prereqs_src:
+                max_timestamp = max(max_timestamp, s.max_timestamp)
+
+        return max_timestamp
+
+    @property
+    def output_buffer(self):
+        if self.dump:
+            out = self.path
+        else:
+            out = None
+
+        return out
+
+    @property
+    def concurrent(self):
+        return self.process_scheduler is not None
+
+    @classmethod
+    def suffix(cls):
+        return cls.SUFFIX
+
+    @classmethod
+    def manip(cls):
+        return cls.MANIP
+
+    @classmethod
+    def pattern_prereq_types(cls):
+        return cls.PATTERN_PREREQ_TYPES
+
+    @classmethod
+    def static_prereq_types(cls):
+        return cls.STATIC_PREREQ_TYPES
+
+    @classmethod
+    def other_prereq_paths(cls, path):
+        return []
+
+    @classmethod
+    def repeatable_prereq(cls):
+        return cls.REPEATABLE_PREREQ
+
+    @classmethod
+    def has_prefix(cls):
+        return cls.HAS_PREFIX
+
+    @classmethod
+    def has_suffix(cls):
+        return cls.HAS_SUFFIX
+
+    @classmethod
+    def arg_types(cls):
+        return cls.ARG_TYPES
+
+    @classmethod
+    def config_keys(cls):
+        out = []
+        for x in cls.CONFIG_KEYS:
+            try:
+                key, default = x
+            except TypeError:
+                key = x
+                default = None
+            out.append((key, default))
+        return out
+
+    @classmethod
+    def config_values(cls):
+        out = []
+        for key, default in cls.config_keys():
+            val_prev = HISTORY_SETTINGS.get(key, None)
+            if val_prev is not None and key.endswith('_path'):
+                val_prev = os.path.normpath(val_prev)
+
+            val_cur = USER_SETTINGS.get(
+                key,
+                DEFAULT_SETTINGS.get(
+                    key,
+                    default
+                )
+            )
+            if val_cur is not None and key.endswith('_path'):
+                val_cur = os.path.normpath(val_cur)
+            out.append((key, val_prev, val_cur))
+
+        return out
+
+    @classmethod
+    def read_mode(cls):
+        file_type = cls.file_type()
+        if file_type == 'text':
+            return 'r'
+        elif file_type == 'python':
+            return 'rb'
+        elif file_type == None:
+            return None
+        else:
+            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'python', None]." % file_type)
+
+    @classmethod
+    def write_mode(cls):
+        file_type = cls.file_type()
+        if file_type == 'text':
+            return 'w'
+        elif file_type == 'python':
+            return 'wb'
+        elif file_type == None:
+            return None
+        else:
+            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'python', None]." % file_type)
+
+    @classmethod
+    def file_type(cls):
+        return cls.FILE_TYPE
+
+    @classmethod
+    def is_text(cls):
+        return cls.FILE_TYPE == 'text'
+
+    @classmethod
+    def descr_short(cls):
+        return cls.DESCR_SHORT
+
+    @classmethod
+    def descr_long(cls):
+        return cls.DESCR_LONG
+
+    @classmethod
+    def assemble(cls, match):
+        return ''.join(match) + cls.SUFFIX
+
+    @classmethod
+    def inheritors(cls):
+        out = set()
+        for c in cls.__subclasses__():
+            out.add(c)
+            out |= c.inheritors()
+
+        return out
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'MBType'
+
+    @classmethod
+    def match(cls, path):
+        out = not cls.is_abstract()
+        if out:
+            suffix = cls.manip() + cls.suffix()
+            out = path.endswith(suffix)
+            if out:
+                prereq_types = cls.pattern_prereq_types()
+                if len(prereq_types) == 0:
+                    out = os.path.basename(path[:-len(suffix)]) == ''
+                elif len(prereq_types) > 1 or cls.repeatable_prereq():
+                    basenames = path[:-len(suffix)].split(DELIM[0])
+                    if cls.has_prefix():
+                        basenames = basenames[1:]
+                    if cls.has_suffix():
+                        basenames = basenames[:-1]
+                    prereq_types = prereq_types[:]
+                    if cls.repeatable_prereq():
+                        while len(prereq_types) < len(basenames):
+                            prereq_types.insert(0, prereq_types[0])
+
+                    out = len(prereq_types) == len(basenames)
+
+        return out
+
+    @classmethod
+    def strip_suffix(cls, path):
+        suffix = cls.manip() + cls.suffix()
+        if suffix != '':
+            name_new = path[:-len(suffix)]
+        else:
+            name_new = path
+        return name_new
+
+    @classmethod
+    def parse_args(cls, path):
+        basename = cls.strip_suffix(path)
+        out = {'basename': basename}
+        if len(cls.arg_types()) > 0:
+            directory = os.path.dirname(basename)
+            basename_split = os.path.basename(basename).split(DELIM[0])
+            basename = DELIM[0].join(basename_split[:-1])
+            out = {'basename': os.path.join(directory, basename)}
+            argstr = basename_split[-1]
+            argstr = argstr.split(DELIM[1])
+            args = [a for a in cls.arg_types() if a.positional]
+            kwargs = [a for a in cls.arg_types() if not a.positional]
+            assert len(args) <= len(argstr), 'Expected %d positional arguments, saw %d.' % (len(args), len(argstr))
+            for arg in args:
+                s = argstr.pop(0)
+                out[arg.key] = arg.read(s)
+            for s in argstr:
+                out_cur = None
+                for i in range(len(kwargs)):
+                    kwarg = kwargs[i]
+                    r = kwarg.read(s)
+                    if r is not None:
+                        out_cur = {kwarg.key: r}
+                        kwargs.pop(i)
+                        break
+
+                assert out_cur is not None, 'Unrecognized keyword argument %d' % s
+                out.update(out_cur)
+
+            for kwarg in kwargs:
+                out[kwarg.key] = kwarg.default
+
+        return out
+
+    @classmethod
+    def parse_path(cls, path):
+        out = None
+        path = os.path.normpath(path)
+        if cls.match(path):
+            out = cls.parse_args(path)
+            out['prereqs'] = []
+            prereqs = []
+            if len(cls.pattern_prereq_types()) > 1 or cls.repeatable_prereq():
+                basename = out['basename']
+                directory = os.path.dirname(basename)
+                basename = os.path.basename(basename)
+                basenames = basename.split(DELIM[0])
+                if cls.has_prefix():
+                    prefix = decrement_delimiters(basenames[0])
+                    basenames = basenames[1:]
+                else:
+                    prefix = ''
+                if cls.has_suffix():
+                    suffix = decrement_delimiters(basenames[-1])
+                    basenames = basenames[:-1]
+                else:
+                    suffix = ''
+                basenames = [os.path.join(directory, DELIM[0].join(
+                    [y for y in (prefix, decrement_delimiters(x), suffix) if y != ''])) for x in basenames]
+                prereq_types = cls.pattern_prereq_types()[:]
+                if cls.repeatable_prereq():
+                    while len(prereq_types) < len(basenames):
+                        prereq_types.insert(0, prereq_types[0])
+                for b, p in zip(basenames, prereq_types):
+                    name = b + p.suffix()
+                    prereqs.append(name)
+                out['prereqs'] = prereqs
+            elif len(cls.pattern_prereq_types()) == 1:
+                prereqs.append(out['basename'] + cls.pattern_prereq_types()[0].suffix())
+                out['prereqs'] = prereqs
+
+        return out
+
+    @classmethod
+    def report_api(cls):
+        out = '-' * 50 + '\n'
+        out += 'Class:                %s\n' % cls.__name__
+        if issubclass(cls, ExternalResource) and cls.url() is not None:
+            out += 'URL:                  %s\n' % cls.url()
+        out += 'Short description:    %s\n' % cls.descr_short()
+        out += 'Detailed description: %s\n' % cls.descr_long()
+        external_resources = [x for x in cls.static_prereq_types() if issubclass(x, ExternalResource)]
+        if len(external_resources) > 0:
+            out += 'External resources:\n'
+            for x in external_resources:
+                out += '  %s\n' % x.__name__
+        out += 'Prerequisites:\n'
+        for i, x in enumerate(cls.pattern_prereq_types()):
+            out += '  %s' % x.__name__
+            if i == 0 and cls.repeatable_prereq():
+                out += ' (repeatable)'
+            out += '\n'
+        for x in cls.other_prereq_paths(None):
+            out += '  %s\n' % x
+        out += '\n'
+        out += 'Syntax: ' + cls.syntax_str()
+        out += '\n\n'
+
+        return out
+
+    @classmethod
+    def syntax_str(cls):
+        if issubclass(cls, StaticResource):
+            out = cls.infer_paths()[0]
+        else:
+            out = []
+            if cls.has_prefix():
+                out.append('<PREFIX>')
+            for i, x in enumerate(cls.pattern_prereq_types()):
+                name = x.__name__
+                if i == 0 and cls.repeatable_prereq():
+                    s = '<%s>(.<%s>)+' % (name, name)
+                else:
+                    s = '<%s>' % name
+                out.append(s)
+            if cls.has_suffix():
+                out.append('<SUFFIX>')
+            out = '(<DIR>/)' + DELIM[0].join(out)
+            if len(cls.arg_types()) > 0:
+                out += DELIM[0]
+                arg_str = ['<%s>' % a.syntax_str() for a in cls.arg_types()]
+                out += DELIM[1].join(arg_str)
+            out += cls.manip()
+            out += cls.suffix()
+
+        return out
+
+    def pattern_prereqs_all_paths(self):
+        return self.pattern_prereqs_all_paths_src
+
+    def pattern_prereqs(self):
+        return self.pattern_prereqs_src
+
+    def other_prereqs_all_paths(self):
+        return self.other_prereqs_all_paths_src
+
+    def other_prereqs(self):
+        return self.other_prereqs_src
+
+    def static_prereqs(self):
+        return self.static_prereqs_src
+
+    def set_data(self, data=None):
+        read_mode = self.read_mode()
+        if read_mode is not None:
+            if data is None:
+                if os.path.exists(self.path):
+                    if os.path.isfile(self.path):
+                        with open(self.path, read_mode) as f:
+                            if self.is_text():
+                                data = f.readlines()
+                            else:
+                                data = pickle.load(f)
+                    else:
+                        data = 'Directory target'
+        self.data = data
+
+    def body(self):
+        raise NotImplementedError
+
+    def body_args(self, dry_run=False):
+        args = self.pattern_prereq_data(dry_run=dry_run) + self.other_prereq_data(dry_run=dry_run)
+        for a in self.arg_types():
+            args.append(self.args[a.key])
+        args = tuple(args)
+
+        return args
+
+    def pattern_prereq_data(self, dry_run=False):
+        return [x.get(dry_run=dry_run) for x in self.pattern_prereqs()]
+
+    def static_prereq_data(self, dry_run=False):
+        return [x.get(dry_run=dry_run) for x in self.static_prereqs()]
+
+    def other_prereq_data(self, dry_run=False):
+        return [x.get(dry_run=dry_run) for x in self.other_prereqs()]
+
+    def get(self, dry_run=False, force=False, report_up_to_date=False):
+        build = force or (self.max_timestamp > self.timestamp)
+        if build and not self.built:
+            body = self.body()
+            args = self.body_args(dry_run=dry_run)
+
+            if isinstance(self.body(), str):
+                descr = body
+                mode = self.read_mode()
+
+                if dry_run:
+                    def fn(body, descr, dump, path, mode, *args):
+                        tostderr(descr + '\n')
+
+                        return None
+
+                else:
+                    def fn(body, descr, dump, path, mode, *args):
+                        tostderr(descr + '\n')
+
+                        returncode = os.system(body)
+                        assert returncode == 0, 'Shell execution failed with return code %s' % returncode
+
+                        data = read_data(path, read_mode=mode)
+
+                        return data
+            else:
+                if self.dump:
+                    dest = self.path
+                else:
+                    dest = None
+                if not isinstance(dest, str):
+                    dest = 'internal variable'
+                descr = 'Dump %s to %s' % (self.descr_short(), dest)
+                mode = self.write_mode()
+
+                if dry_run:
+                    def fn(body, descr, dump, path, mode, *args):
+                        tostderr(descr + '\n')
+
+                        return None
+                else:
+                    def fn(body, descr, dump, path, mode, *args):
+                        tostderr(descr + '\n')
+
+                        data = body(*args)
+
+                        if dump:
+                            dump_data(data, buffer=path, write_mode=mode)
+
+                        return data
+
+            if self.concurrent:
+                fn = self.process_scheduler.remote(fn).remote
+
+            data = fn(
+                body,
+                descr,
+                self.dump,
+                self.path,
+                mode,
+                *args
+            )
+
+            self.set_data(data)
+
+            self.built = True
+        else:
+            if dry_run:
+                def fn(path, data, report_up_to_date=False):
+                    if report_up_to_date:
+                        tostderr('%s is up to date.\n' % path)
+
+                    return None
+            else:
+                def fn(path, data, report_up_to_date=False):
+                    if report_up_to_date:
+                        tostderr('%s is up to date.\n' % path)
+
+                    return data
+
+            if self.concurrent:
+                fn = self.process_scheduler.remote(fn).remote
+
+            data = fn(self.path, self.data, report_up_to_date=report_up_to_date)
+
+        return data
+
+    def get_garbage(self, force=False):
+        garbage = set()
+        build = force or (self.max_timestamp > self.timestamp)
+
+        if build:
+            for s in self.pattern_prereqs() + self.other_prereqs():
+                garbage |= s.get_garbage(force=force)
+
+            if self.intermediate and self.dump:
+                garbage.add(self.path)
+
+        return garbage
+
+    def update_history(self):
+        for x in self.static_prereqs_src + self.pattern_prereqs() + self.other_prereqs():
+            x.update_history()
+        for k, _, v in self.config_values():
+            HISTORY_SETTINGS[k] = v
+
+    def set_pattern_prereqs(self, prereqs):
+        self.pattern_prereqs_all_paths_src = prereqs
+
+        assert self.pattern_prereqs_all_paths_src is not None, 'No recipe to make %s' % self.path
+        prereqs = []
+        for p in self.pattern_prereqs_all_paths_src:
+            candidates = list(p)
+            if len(candidates) > 0:
+                prereqs.append(candidates[0])
+            else:
+                prereqs.append(None)
+
+        self.pattern_prereqs_src = prereqs
+
+    def set_static_prereqs(self, prereqs):
+        self.static_prereqs_src = prereqs
+        assert self.static_prereqs_src is not None, 'No recipe to make %s' % self.path
+
+    def set_other_prereqs(self, prereqs):
+        self.other_prereqs_all_paths_src = prereqs
+
+        assert self.other_prereqs_all_paths_src is not None, 'No recipe to make %s' % self.path
+        prereqs = []
+        for p in self.other_prereqs_all_paths_src:
+            candidates = list(p)
+            prereqs.append(candidates[0])
+
+        self.other_prereqs_src = prereqs
+
+    def set_dump(self):
+        dump = False
+        if isinstance(self.body(), str):  # is a shell command and needs to be dumped
+            dump = True
+            self.dump = dump
+        if dump:
+            for p in self.pattern_prereqs_all_paths_src:
+                for q in p:
+                    q.dump = True
+            for q in self.static_prereqs_src:
+                q.dump = True
+            for p in self.other_prereqs_all_paths_src:
+                for q in p:
+                    q.dump = True
+
+    def exists(self):
+        return self.data.data is not None
+
+    def directories_to_make(self, force=False):
+        out = set()
+        build = force or (self.max_timestamp > self.timestamp)
+        if build:
+            if self.dump and len(self.directory) > 0 and not os.path.exists(self.directory):
+                out.add(self.directory)
+            for p in self.pattern_prereqs():
+                out |= p.directories_to_make(force=force)
+        return out
+
+
+class StaticResource(MBType):
+    DEFAULT_LOCATION = ''
+    DESCR_LONG = (
+        "Abstract base class for dependency to a static resource.\n"
+    )
+
+    def __init__(self):
+        super(StaticResource, self).__init__(self.DEFAULT_LOCATION)
+
+    @classmethod
+    def default_location(cls):
+        return cls.DEFAULT_LOCATION
+
+    @classmethod
+    def infer_paths(cls):
+        path = os.path.normpath(cls.default_location())
+        return path, path, path
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'StaticResource'
+
+    @classmethod
+    def match(cls, path):
+        out = os.path.abspath(path) == os.path.abspath(cls.infer_paths()[0])
+        return out
+
+    def build(self):
+        assert os.path.exists(
+            self.path), '%s is a missing static resource and cannot be built. Check to make sure you have the required resources.' % self.path
+
+
+class ExternalResource(StaticResource):
+    URL = None
+    PARENT_RESOURCE = None
+    DESCR_LONG = (
+        "Abstract base class for dependency to external resource.\n"
+    )
+
+    def __init__(self):
+        super(ExternalResource, self).__init__()
+
+        self.path, self.rel_path_cur, self.rel_path_prev = self.infer_paths()
+        self.basename = os.path.basename(self.path)
+        self.directory = os.path.dirname(self.path)
+
+    @property
+    def timestamp(self):
+        paths = [self.path]
+        times = []
+        if self.parent_resource() is not None:
+            paths.append(self.parent_resource().infer_paths()[0])
+        for path in paths:
+            if os.path.exists(path):
+                t = os.path.getmtime(path)
+            else:
+                t = -np.inf
+            times.append(t)
+
+        out = max(times)
+
+        return out
+
+    @classmethod
+    def default_location(cls):
+        return os.path.normpath(DEFAULT_SETTINGS.get(cls.__name__ + '_path', cls.DEFAULT_LOCATION))
+
+    @classmethod
+    def url(cls):
+        return cls.URL
+
+    @classmethod
+    def parent_resource(cls):
+        return cls.PARENT_RESOURCE
+
+    @classmethod
+    def config_keys(cls):
+        out = [(cls.__name__ + '_path', cls.default_location())]
+        for x in cls.CONFIG_KEYS:
+            try:
+                key, default = x
+            except TypeError:
+                key = x
+                default = None
+            out.append((key, default))
+        return out
+
+    @classmethod
+    def infer_paths(cls):
+        path = ''
+
+        _, rel_path_prev, rel_path_cur = cls.config_values()[0]
+
+        if cls.parent_resource() is not None:
+            path = os.path.join(path, cls.parent_resource().infer_paths()[0])
+
+        path = os.path.join(path, rel_path_cur)
+
+        return path, rel_path_cur, rel_path_prev
+
+    @classmethod
+    def ancestor_exists(cls):
+        c = cls
+        p = cls.parent_resource()
+        while p is not None:
+            c = p
+            p = p.parent_resource()
+        return os.path.exists(c.infer_paths()[0])
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'ExternalResource'
+
+    def build(self):
+        if not os.path.exists(self.path) and self.ancestor_exists():
+            super(ExternalResource, self).build()
+
+
+
+
+
+#####################################
+#
+# CORE MB TYPES
+#
+#####################################
+
+class MBFailure(MBType):
+    DESCR_SHORT = 'failed target'
+    DESCR_LONG = (
+        "Class to represent build failures.\n"
+    )
+
+    def __init__(self, path, cls):
+        super(MBFailure, self).__init__(path)
+        self.cls = cls
+
+    def cls_suffix(self):
+        return self.cls.suffix()
+
+    def cls_manip(self):
+        return self.cls.manip()
+
+
+
+
+
+#####################################
+#
+# OTHER TYPES
+#
+#####################################
 
 
 class Arg(object):
@@ -641,7 +1412,7 @@ class Graph(object):
         garbage = sorted(list(self.get_garbage(force=force)))
 
         # Run targets
-        out = [x.get(dry_run=dry_run, force=force) for x in self.targets]
+        out = [x.get(dry_run=dry_run, force=force, report_up_to_date=True) for x in self.targets]
 
         # Update history (links to external resources)
         self.update_history()
@@ -672,733 +1443,16 @@ class Graph(object):
         return out
 
 
-class MBType(object):
-    SUFFIX = ''
-    MANIP = ''
-    PATTERN_PREREQ_TYPES = []
-    STATIC_PREREQ_TYPES = []
-    ARG_TYPES = []
-    CONFIG_KEYS = []
-    FILE_TYPE = 'text' # one of ['text', 'python', None], for text, python-readable binary (pickle) or other (non-python-readable) file, respectively
 
-    REPEATABLE_PREREQ = False
 
-    HAS_PREFIX = False
-    HAS_SUFFIX = False
 
-    DESCR_SHORT = 'data'
-    DESCR_LONG = (
-        "Abstract base class for ModelBlocks types.\n"
-    )
+#####################################
+#
+# INFER STATIC RESOURCE TYPES
+#
+#####################################
 
 
-    def __init__(self, path):
-        path = os.path.normpath(path)
-        if path.endswith(self.suffix()):
-            if self.suffix() != '':
-                path = path[:-len(self.suffix())]
-        self.directory = os.path.dirname(path)
-        self.basename = os.path.basename(path)
-        self.path = os.path.join(self.directory, self.basename + self.suffix())
-        args = self.parse_path(self.path)
-
-        if args is not None:
-            if 'basename' in args:
-                del args['basename']
-            if 'prereqs' in args:
-                del args['prereqs']
-            if 'static_prereqs' in args:
-                del args['static_prereqs']
-
-        self.args = args
-
-        self.pattern_prereqs_all_paths_src = None
-        self.pattern_prereqs_src = None
-        self.static_prereqs_src = None
-        self.other_prereqs_all_paths_src = None
-        self.other_prereqs_src = None
-        self.dependencies = None
-
-        self.data = None
-        self.set_data()
-
-        self.dump = os.path.exists(self.path)
-
-        self.graph = None
-        self.intermediate = not self.dump
-
-        self.fn_dry_run = None
-        self.fn = None
-        self.built = False
-        self.process_scheduler = None
-
-    @property
-    def timestamp(self):
-        return get_timestamp(self.path)
-
-    @property
-    def max_timestamp(self):
-        max_timestamp = self.timestamp
-        for k, old, new in self.config_values():
-            if old != new:
-                max_timestamp = np.inf
-                break
-        if max_timestamp < np.inf:
-            for s in self.pattern_prereqs_src + self.static_prereqs_src + self.other_prereqs_src:
-                max_timestamp = max(max_timestamp, s.max_timestamp)
-
-        return max_timestamp
-
-    @property
-    def output_buffer(self):
-        if self.dump:
-            out = self.path
-        else:
-            out = None
-
-        return out
-
-    @property
-    def concurrent(self):
-        return self.process_scheduler is not None
-
-    @classmethod
-    def suffix(cls):
-        return cls.SUFFIX
-
-    @classmethod
-    def manip(cls):
-        return cls.MANIP
-
-    @classmethod
-    def pattern_prereq_types(cls):
-        return cls.PATTERN_PREREQ_TYPES
-
-    @classmethod
-    def static_prereq_types(cls):
-        return cls.STATIC_PREREQ_TYPES
-
-    @classmethod
-    def other_prereq_paths(cls, path):
-        return []
-
-    @classmethod
-    def repeatable_prereq(cls):
-        return cls.REPEATABLE_PREREQ
-
-    @classmethod
-    def has_prefix(cls):
-        return cls.HAS_PREFIX
-
-    @classmethod
-    def has_suffix(cls):
-        return cls.HAS_SUFFIX
-
-    @classmethod
-    def arg_types(cls):
-        return cls.ARG_TYPES
-
-    @classmethod
-    def config_keys(cls):
-        out = []
-        for x in cls.CONFIG_KEYS:
-            try:
-                key, default = x
-            except TypeError:
-                key = x
-                default = None
-            out.append((key, default))
-        return out
-
-    @classmethod
-    def config_values(cls):
-        out = []
-        for key, default in cls.config_keys():
-            val_prev = HISTORY_SETTINGS.get(key, None)
-            if val_prev is not None and key.endswith('_path'):
-                val_prev = os.path.normpath(val_prev)
-
-            val_cur = USER_SETTINGS.get(
-                key,
-                DEFAULT_SETTINGS.get(
-                    key,
-                    default
-                )
-            )
-            if val_cur is not None and key.endswith('_path'):
-                val_cur = os.path.normpath(val_cur)
-            out.append((key, val_prev, val_cur))
-
-        return out
-
-    @classmethod
-    def read_mode(cls):
-        file_type = cls.file_type()
-        if file_type == 'text':
-            return 'r'
-        elif file_type == 'python':
-            return 'rb'
-        elif file_type == None:
-            return None
-        else:
-            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'python', None]." % file_type)
-
-    @classmethod
-    def write_mode(cls):
-        file_type = cls.file_type()
-        if file_type == 'text':
-            return 'w'
-        elif file_type == 'python':
-            return 'wb'
-        elif file_type == None:
-            return None
-        else:
-            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'python', None]." % file_type)
-
-    @classmethod
-    def file_type(cls):
-        return cls.FILE_TYPE
-
-    @classmethod
-    def is_text(cls):
-        return cls.FILE_TYPE == 'text'
-
-    @classmethod
-    def descr_short(cls):
-        return cls.DESCR_SHORT
-
-    @classmethod
-    def descr_long(cls):
-        return cls.DESCR_LONG
-
-    @classmethod
-    def assemble(cls, match):
-        return ''.join(match) + cls.SUFFIX
-
-    @classmethod
-    def inheritors(cls):
-        out = set()
-        for c in cls.__subclasses__():
-            out.add(c)
-            out |= c.inheritors()
-
-        return out
-    
-    @classmethod
-    def is_abstract(cls):
-        return cls.__name__ == 'MBType'
-
-    @classmethod
-    def match(cls, path):
-        out = not cls.is_abstract()
-        if out:
-            suffix = cls.manip() + cls.suffix()
-            out = path.endswith(suffix)
-            if out:
-                prereq_types = cls.pattern_prereq_types()
-                if len(prereq_types) == 0:
-                    out = os.path.basename(path[:-len(suffix)]) == ''
-                elif len(prereq_types) > 1 or cls.repeatable_prereq():
-                    basenames = path[:-len(suffix)].split(DELIM[0])
-                    if cls.has_prefix():
-                        basenames = basenames[1:]
-                    if cls.has_suffix():
-                        basenames = basenames[:1]
-                    prereq_types = prereq_types[:]
-                    if cls.repeatable_prereq():
-                        while len(prereq_types) < len(basenames):
-                            prereq_types.insert(0, prereq_types[0])
-
-                    out = len(prereq_types) == len(basenames)
-
-        return out
-
-    @classmethod
-    def strip_suffix(cls, path):
-        suffix = cls.manip() + cls.suffix()
-        if suffix != '':
-            name_new = path[:-len(suffix)]
-        else:
-            name_new = path
-        return name_new
-
-    @classmethod
-    def parse_args(cls, path):
-        basename = cls.strip_suffix(path)
-        out = {'basename': basename}
-        if len(cls.arg_types()) > 0:
-            directory = os.path.dirname(basename)
-            basename_split = os.path.basename(basename).split(DELIM[0])
-            basename = DELIM[0].join(basename_split[:-1])
-            out = {'basename': os.path.join(directory, basename)}
-            argstr = basename_split[-1]
-            argstr = argstr.split(DELIM[1])
-            args = [a for a in cls.arg_types() if a.positional]
-            kwargs = [a for a in cls.arg_types() if not a.positional]
-            assert len(args) <= len(argstr), 'Expected %d positional arguments, saw %d.' % (len(args), len(argstr))
-            for arg in args:
-                s = argstr.pop(0)
-                out[arg.key] = arg.read(s)
-            for s in argstr:
-                out_cur = None
-                for i in range(len(kwargs)):
-                    kwarg = kwargs[i]
-                    r = kwarg.read(s)
-                    if r is not None:
-                        out_cur = {kwarg.key: r}
-                        kwargs.pop(i)
-                        break
-
-                assert out_cur is not None, 'Unrecognized keyword argument %d' % s
-                out.update(out_cur)
-
-            for kwarg in kwargs:
-                out[kwarg.key] = kwarg.default
-
-        return out
-
-    @classmethod
-    def parse_path(cls, path):
-        out = None
-        path = os.path.normpath(path)
-        if cls.match(path):
-            out = cls.parse_args(path)
-            out['prereqs'] = []
-            prereqs = []
-            if len(cls.pattern_prereq_types()) > 1 or cls.repeatable_prereq():
-                basename = out['basename']
-                directory = os.path.dirname(basename)
-                basename = os.path.basename(basename)
-                basenames = basename.split(DELIM[0])
-                if cls.has_prefix():
-                    prefix = decrement_delimiters(basenames[0])
-                    basenames = basenames[1:]
-                else:
-                    prefix = ''
-                if cls.has_suffix():
-                    suffix = decrement_delimiters(basenames[-1])
-                    basenames = basenames[:1]
-                else:
-                    suffix = ''
-                basenames = [os.path.join(directory, DELIM[0].join([y for y in (prefix, decrement_delimiters(x), suffix) if y != ''])) for x in basenames]
-                prereq_types = cls.pattern_prereq_types()[:]
-                if cls.repeatable_prereq():
-                    while len(prereq_types) < len(basenames):
-                        prereq_types.insert(0, prereq_types[0])
-                for b, p in zip(basenames, prereq_types):
-                    name = b + p.suffix()
-                    prereqs.append(name)
-                out['prereqs'] = prereqs
-            elif len(cls.pattern_prereq_types()) == 1:
-                prereqs.append(out['basename'] + cls.pattern_prereq_types()[0].suffix())
-                out['prereqs'] = prereqs
-
-        return out
-
-    @classmethod
-    def report_api(cls):
-        out = '-' * 50 + '\n'
-        out += 'Class:                %s\n' % cls.__name__
-        if issubclass(cls, ExternalResource) and cls.url() is not None:
-            out += 'URL:                  %s\n' % cls.url()
-        out += 'Short description:    %s\n' % cls.descr_short()
-        out += 'Detailed description: %s\n' % cls.descr_long()
-        external_resources = [x for x in cls.static_prereq_types() if issubclass(x, ExternalResource)]
-        if len(external_resources) > 0:
-            out += 'External resources:\n'
-            for x in external_resources:
-                out += '  %s\n' % x.__name__
-        out += 'Prerequisites:\n'
-        for i, x in enumerate(cls.pattern_prereq_types()):
-            out += '  %s' % x.__name__
-            if i == 0 and cls.repeatable_prereq():
-                out += ' (repeatable)'
-            out += '\n'
-        for x in cls.other_prereq_paths(None):
-            out += '  %s\n' % x
-        out += '\n'
-        out += 'Syntax: ' + cls.syntax_str()
-        out += '\n\n'
-
-        return out
-
-    @classmethod
-    def syntax_str(cls):
-        if issubclass(cls, StaticResource):
-            out = cls.infer_paths()[0]
-        else:
-            out = []
-            if cls.has_prefix():
-                out.append('<PREFIX>')
-            for i, x in enumerate(cls.pattern_prereq_types()):
-                name = x.__name__
-                if i == 0 and cls.repeatable_prereq():
-                    s = '<%s>(.<%s>)+' % (name, name)
-                else:
-                    s = '<%s>' % name
-                out.append(s)
-            if cls.has_suffix():
-                out.append('<SUFFIX>')
-            out = '(<DIR>/)' + DELIM[0].join(out)
-            if len(cls.arg_types()) > 0:
-                out += DELIM[0]
-                arg_str = ['<%s>' % a.syntax_str() for a in cls.arg_types()]
-                out += DELIM[1].join(arg_str)
-            out += cls.manip()
-            out += cls.suffix()
-
-        return out
-
-    def pattern_prereqs_all_paths(self):
-        return self.pattern_prereqs_all_paths_src
-
-    def pattern_prereqs(self):
-        return self.pattern_prereqs_src
-
-    def other_prereqs_all_paths(self):
-        return self.other_prereqs_all_paths_src
-
-    def other_prereqs(self):
-        return self.other_prereqs_src
-
-    def static_prereqs(self):
-        return self.static_prereqs_src
-
-    def set_data(self, data=None):
-        read_mode = self.read_mode()
-        if read_mode is not None:
-            if data is None:
-                if os.path.exists(self.path):
-                    if os.path.isfile(self.path):
-                        with open(self.path, read_mode) as f:
-                            if self.is_text():
-                                data = f.readlines()
-                            else:
-                                data = pickle.load(f)
-                    else:
-                        data = 'Directory target'
-        self.data = data
-    
-    def body(self):
-        raise NotImplementedError
-
-    def body_args(self, dry_run=False):
-        args = self.pattern_prereq_data(dry_run=dry_run) + self.other_prereq_data(dry_run=dry_run)
-        for a in self.arg_types():
-            args.append(self.args[a.key])
-        args = tuple(args)
-
-        return args
-
-    def pattern_prereq_data(self, dry_run=False):
-        return [x.get(dry_run=dry_run) for x in self.pattern_prereqs()]
-    
-    def static_prereq_data(self, dry_run=False):
-        return [x.get(dry_run=dry_run) for x in self.static_prereqs()]
-
-    def other_prereq_data(self, dry_run=False):
-        return [x.get(dry_run=dry_run) for x in self.other_prereqs()]
-
-    def get(self, dry_run=False, force=False):
-        build = force or (self.max_timestamp > self.timestamp)
-        if build and not self.built:
-            body = self.body()
-            args = self.body_args(dry_run=dry_run)
-
-            if isinstance(self.body(), str):
-                descr = body
-                mode = self.read_mode()
-
-                if dry_run:
-                    def fn(body, descr, dump, path, mode, *args):
-                        tostderr(descr + '\n')
-
-                        return None
-
-                else:
-                    def fn(body, descr, dump, path, mode, *args):
-                        tostderr(descr + '\n')
-
-                        returncode = os.system(body)
-                        assert returncode == 0, 'Shell execution failed with return code %s' % returncode
-
-                        data = read_data(path, read_mode=mode)
-
-                        return data
-            else:
-                if self.dump:
-                    dest = self.path
-                else:
-                    dest = None
-                if not isinstance(dest, str):
-                    dest = 'internal variable'
-                descr = 'Dump %s to %s' % (self.descr_short(), dest)
-                mode = self.write_mode()
-
-                if dry_run:
-                    def fn(body, descr, dump, path, mode, *args):
-                        tostderr(descr + '\n')
-
-                        return None
-                else:
-                    def fn(body, descr, dump, path, mode, *args):
-                        tostderr(descr + '\n')
-
-                        data = body(*args)
-
-                        if dump:
-                            dump_data(data, buffer=path, write_mode=mode)
-
-                        return data
-                    
-            if self.concurrent:
-                fn = self.process_scheduler.remote(fn).remote
-
-            data = fn(
-                body,
-                descr,
-                self.dump,
-                self.path,
-                mode,
-                *args
-            )
-
-            self.set_data(data)
-
-            self.built = True
-        else:
-            if dry_run:
-                def fn(path, data):
-                    tostderr('%s is up to date.\n' % path)
-
-                    return None
-            else:
-                def fn(path, data):
-                    tostderr('%s is up to date.\n' % path)
-
-                    return data
-
-            if self.concurrent:
-                fn = self.process_scheduler.remote(fn).remote
-
-            data = fn(self.path, self.data)
-
-        return data
-
-    def get_garbage(self, force=False):
-        garbage = set()
-        build = force or (self.max_timestamp > self.timestamp)
-
-        if build:
-            for s in self.pattern_prereqs() + self.other_prereqs():
-                garbage |= s.get_garbage(force=force)
-
-            if self.intermediate and self.dump:
-                garbage.add(self.path)
-
-        return garbage
-
-    def update_history(self):
-        for x in self.static_prereqs_src + self.pattern_prereqs() + self.other_prereqs():
-            x.update_history()
-        for k, _, v in self.config_values():
-            HISTORY_SETTINGS[k] = v
-
-    def set_pattern_prereqs(self, prereqs):
-        self.pattern_prereqs_all_paths_src = prereqs
-
-        assert self.pattern_prereqs_all_paths_src is not None, 'No recipe to make %s' % self.path
-        prereqs = []
-        for p in self.pattern_prereqs_all_paths_src:
-            candidates = list(p)
-            if len(candidates) > 0:
-                prereqs.append(candidates[0])
-            else:
-                prereqs.append(None)
-
-        self.pattern_prereqs_src = prereqs
-
-    def set_static_prereqs(self, prereqs):
-        self.static_prereqs_src = prereqs
-        assert self.static_prereqs_src is not None, 'No recipe to make %s' % self.path
-
-    def set_other_prereqs(self, prereqs):
-        self.other_prereqs_all_paths_src = prereqs
-
-        assert self.other_prereqs_all_paths_src is not None, 'No recipe to make %s' % self.path
-        prereqs = []
-        for p in self.other_prereqs_all_paths_src:
-            candidates = list(p)
-            prereqs.append(candidates[0])
-
-        self.other_prereqs_src = prereqs
-
-    def set_dump(self):
-        dump = False
-        if isinstance(self.body(), str):  # is a shell command and needs to be dumped
-            dump = True
-            self.dump = dump
-        if dump:
-            for p in self.pattern_prereqs_all_paths_src:
-                for q in p:
-                    q.dump = True
-            for q in self.static_prereqs_src:
-                q.dump = True
-            for p in self.other_prereqs_all_paths_src:
-                for q in p:
-                    q.dump = True
-
-    def exists(self):
-        return self.data.data is not None
-
-    def directories_to_make(self, force=False):
-        out = set()
-        build = force or (self.max_timestamp > self.timestamp)
-        if build:
-            if self.dump and len(self.directory) > 0 and not os.path.exists(self.directory):
-                out.add(self.directory)
-            for p in self.pattern_prereqs():
-                out |= p.directories_to_make(force=force)
-        return out
-
-
-class StaticResource(MBType):
-    DEFAULT_LOCATION = ''
-    DESCR_LONG = (
-        "Abstract base class for dependency to a static resource.\n"
-    )
-
-    def __init__(self):
-        super(StaticResource, self).__init__(self.DEFAULT_LOCATION)
-
-    @classmethod
-    def default_location(cls):
-        return cls.DEFAULT_LOCATION
-
-    @classmethod
-    def infer_paths(cls):
-        path = os.path.normpath(cls.default_location())
-        return path, path, path
-
-    @classmethod
-    def is_abstract(cls):
-        return cls.__name__ == 'StaticResource'
-
-    @classmethod
-    def match(cls, path):
-        out = os.path.abspath(path) == os.path.abspath(cls.infer_paths()[0])
-        return out
-
-    def build(self):
-        assert os.path.exists(self.path), '%s is a missing static resource and cannot be built. Check to make sure you have the required resources.' % self.path
-
-
-class ExternalResource(StaticResource):
-    URL = None
-    PARENT_RESOURCE = None
-    DESCR_LONG = (
-        "Abstract base class for dependency to external resource.\n"
-    )
-
-    def __init__(self):
-        super(ExternalResource, self).__init__()
-
-        self.path, self.rel_path_cur, self.rel_path_prev = self.infer_paths()
-        self.basename = os.path.basename(self.path)
-        self.directory = os.path.dirname(self.path)
-
-    @property
-    def timestamp(self):
-        paths = [self.path]
-        times = []
-        if self.parent_resource() is not None:
-            paths.append(self.parent_resource().infer_paths()[0])
-        for path in paths:
-            if os.path.exists(path):
-                t = os.path.getmtime(path)
-            else:
-                t = -np.inf
-            times.append(t)
-
-        out = max(times)
-
-        return out
-
-    @classmethod
-    def default_location(cls):
-        return os.path.normpath(DEFAULT_SETTINGS.get(cls.__name__ + '_path', cls.DEFAULT_LOCATION))
-
-    @classmethod
-    def url(cls):
-        return cls.URL
-
-    @classmethod
-    def parent_resource(cls):
-        return cls.PARENT_RESOURCE
-
-    @classmethod
-    def config_keys(cls):
-        out = [(cls.__name__ + '_path', cls.default_location())]
-        for x in cls.CONFIG_KEYS:
-            try:
-                key, default = x
-            except TypeError:
-                key = x
-                default = None
-            out.append((key, default))
-        return out
-
-    @classmethod
-    def infer_paths(cls):
-        path = ''
-
-        _, rel_path_prev, rel_path_cur = cls.config_values()[0]
-
-        if cls.parent_resource() is not None:
-            path = os.path.join(path, cls.parent_resource().infer_paths()[0])
-
-        path = os.path.join(path, rel_path_cur)
-
-        return path, rel_path_cur, rel_path_prev
-
-    @classmethod
-    def ancestor_exists(cls):
-        c = cls
-        p = cls.parent_resource()
-        while p is not None:
-            c = p
-            p = p.parent_resource()
-        return os.path.exists(c.infer_paths()[0])
-
-    @classmethod
-    def is_abstract(cls):
-        return cls.__name__ == 'ExternalResource'
-
-    def build(self):
-        if not os.path.exists(self.path) and self.ancestor_exists():
-            super(ExternalResource, self).build()
-
-
-class MBFailure(MBType):
-    DESCR_SHORT = 'failed target'
-    DESCR_LONG = (
-        "Class to represent build failures.\n"
-    )
-
-    def __init__(self, path, cls):
-        super(MBFailure, self).__init__(path)
-        self.cls = cls
-
-    def cls_suffix(self):
-        return self.cls.suffix()
-
-    def cls_manip(self):
-        return self.cls.manip()
-
-
-
-
-# Infer classes from MB static resources
 static_classes = create_classes_from_dir(STATIC_RESOURCES_DIR)
 for c in static_classes:
     globals()[c.__name__] = c

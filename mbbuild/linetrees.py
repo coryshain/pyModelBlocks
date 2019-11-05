@@ -3,6 +3,8 @@ from mbbuild.util import tree
 from mbbuild.util.deps2trees import deps2trees
 from mbbuild.util.rules2headmodel import rules2headmodel
 from mbbuild.util.trees2deps import trees2deps
+from mbbuild.util.tree_compare import compare_trees
+from mbbuild.util.constit_eval import constit_eval
 
 
 #####################################
@@ -635,6 +637,138 @@ class ModelHead(Model):
         return out
 
 
+
+
+
+#####################################
+#
+# SYNTACTIC EVALUATION TYPES
+#
+#####################################
+
+
+class Syneval(MBType):
+    SUFFIX = '.syneval'
+    PATTERN_PREREQ_TYPES = [LineTrees, LineTrees]
+    STATIC_PREREQ_TYPES = [ParamEvalb]
+    DESCR_SHORT = 'syneval'
+    DESCR_LONG = "Evaluate one syntactic annotation (parse) against another.\n"
+
+    def body(self):
+        linetrees = self.pattern_prereqs()
+
+        out = '%s -p %s %s %s > %s' % (
+            self.other_prereqs()[0].path,
+            self.static_prereqs()[0].path,
+            linetrees[0].path,
+            linetrees[1].path,
+            self.path
+        )
+
+        return out
+
+    @classmethod
+    def other_prereq_paths(cls, path):
+        return ['bin/evalb']
+
+
+class SynevalPrefix(Syneval):
+    HAS_PREFIX = True
+
+
+class SynevalPrefixSuffix(Syneval):
+    HAS_PREFIX = True
+    HAS_SUFFIX = True
+
+
+class SynevalSuffix(Syneval):
+    HAS_SUFFIX = True
+
+
+class SynevalErrors(MBType):
+    SUFFIX = '.syneval.errs'
+    PATTERN_PREREQ_TYPES = [LineTrees, LineTrees]
+    DESCR_SHORT = 'syneval errors'
+    DESCR_LONG = "Report parse errors in trees (2nd arg) compared to gold (1st arg).\n"
+
+    def body(self):
+        def out(*args):
+            gold = args[0]
+            pred = args[1]
+
+            outputs = compare_trees(gold, pred)
+
+            return outputs
+
+        return out
+
+
+class SynevalErrorsPrefix(SynevalErrors):
+    HAS_PREFIX = True
+
+
+class SynevalErrorsPrefixSuffix(SynevalErrors):
+    HAS_PREFIX = True
+    HAS_SUFFIX = True
+
+
+class SynevalErrorsSuffix(SynevalErrors):
+    HAS_SUFFIX = True
+
+
+class ConstitEval(MBType):
+    SUFFIX = '.constiteval'
+    PATTERN_PREREQ_TYPES = [LineTrees, LineTrees]
+    DESCR_SHORT = 'constituent eval (syneval plus)'
+    DESCR_LONG = "Run constituent evaluation (suite of metrics for unsupervised parsing eval).\n"
+
+    def body(self):
+        def out(*args):
+            gold = iter(args[0])
+            pred = iter(args[1])
+
+            outputs = constit_eval(gold, pred)
+
+            return outputs
+
+        return out
+
+
+class ConstitEvalPrefix(ConstitEval):
+    HAS_PREFIX = True
+
+
+class ConstitEvalPrefixSuffix(ConstitEval):
+    HAS_PREFIX = True
+    HAS_SUFFIX = True
+
+
+class ConstitEvalSuffix(ConstitEval):
+    HAS_SUFFIX = True
+
+
+class BootstrapSignif(MBType):
+    SUFFIX = '.bootstrapsignif'
+    PATTERN_PREREQ_TYPES = [Syneval, Syneval]
+    STATIC_PREREQ_TYPES = [ScriptsCompare]
+    DESCR_SHORT = 'syneval signif test'
+    DESCR_LONG = "Statistically compare difference between two synevals by bootstrap test.\n"
+
+    def body(self):
+        synevals = self.pattern_prereqs()
+
+        out = 'perl %s %s %s > %s' % (
+            self.static_prereqs()[0].path,
+            synevals[0].path,
+            synevals[1].path,
+            self.path
+        )
+
+        return out
+
+
+class BootstrapSignifPrefix(BootstrapSignif):
+    HAS_PREFIX = True
 
 
 
