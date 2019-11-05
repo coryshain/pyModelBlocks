@@ -1,5 +1,9 @@
 from .core import *
-from . import tree
+from mbbuild.util import tree
+from mbbuild.util.deps2trees import deps2trees
+from mbbuild.util.rules2headmodel import rules2headmodel
+from mbbuild.util.trees2deps import trees2deps
+
 
 #####################################
 #
@@ -27,6 +31,26 @@ class LineTrees(MBType):
         return cls.__name__ == 'LineTrees'
 
 
+class Rules(MBType):
+    SUFFIX = '.rules'
+    DESCR_SHORT = 'rules'
+    DESCR_LONG = "Abstract base class for PCFG rules file types.\n"
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'Rules'
+
+
+class Model(MBType):
+    SUFFIX = '.model'
+    DESCR_SHORT = 'model'
+    DESCR_LONG = "Abstract base class for PCFG model file types.\n"
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'Model'
+
+
 class EditableTrees(MBType):
     SUFFIX = '.editabletrees'
     DESCR_SHORT = 'editable trees'
@@ -37,9 +61,21 @@ class EditableTrees(MBType):
         return cls.__name__ == 'EditableTrees'
 
 
+class TokDeps(MBType):
+    SUFFIX = '.tokdeps'
+    DESCR_SHORT = 'tokdeps'
+    DESCR_LONG = "Abstract base class for tokdeps types.\n"
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'TokDeps'
+
+
+
+
 #####################################
 #
-# IMPLEMENTED TYPES
+# COMPILED BINARIES
 #
 #####################################
 
@@ -69,6 +105,16 @@ class Indent(MBType):
         )
 
 
+
+
+
+#####################################
+#
+# LINETREES TYPES
+#
+#####################################
+
+
 class LineTreesFromEditableTrees(LineTrees):
     PATTERN_PREREQ_TYPES = [EditableTrees]
     STATIC_PREREQ_TYPES = [ScriptsEditabletrees2linetrees]
@@ -77,44 +123,6 @@ class LineTreesFromEditableTrees(LineTrees):
 
     def body(self):
         out = "cat %s  |  perl -pe 's/^[0-9]*://;'  |  perl %s  >  %s" % (
-            self.pattern_prereqs()[0].path,
-            self.static_prereqs()[0].path,
-            self.path
-        )
-
-        return out
-
-
-class EditableTreesFromLineTrees(EditableTrees):
-    MANIP = '.fromlinetrees'
-    PATTERN_PREREQ_TYPES = [LineTrees]
-    DESCR_SHORT = 'linetrees from editabletrees'
-    DESCR_LONG = "Convert editabletrees into linetrees.\n"
-
-    @classmethod
-    def other_prereq_paths(cls, path):
-        return ['bin/indent']
-
-
-    def body(self):
-        out = "cat %s | %s  >  %s" % (
-            self.pattern_prereqs()[0].path,
-            self.other_prereqs()[0].path,
-            self.path
-        )
-
-        return out
-
-
-class EditableTreesNumbered(EditableTrees):
-    MANIP = '.numbered'
-    PATTERN_PREREQ_TYPES = [EditableTrees]
-    STATIC_PREREQ_TYPES = [ScriptsMaketreesnumbered]
-    DESCR_SHORT = 'numbered editabletrees'
-    DESCR_LONG = "Add line numbers to editable trees.\n"
-
-    def body(self):
-        out = "cat %s | perl %s  >  %s" % (
             self.pattern_prereqs()[0].path,
             self.static_prereqs()[0].path,
             self.path
@@ -138,7 +146,7 @@ class LineTreesUpper(LineTrees):
                 if (x != '') and (x[0] != '%'):
                     t.read(x)
                     t.upper()
-                    outputs.append(str(t))
+                    outputs.append(str(t) + '\n')
 
             return outputs
 
@@ -160,7 +168,7 @@ class LineTreesLower(LineTrees):
                 if (x != '') and (x[0] != '%'):
                     t.read(x)
                     t.lower()
-                    outputs.append(str(t))
+                    outputs.append(str(t) + '\n')
                 
             return outputs
 
@@ -302,6 +310,111 @@ class LineTreesNoDashTags(LineTrees):
         return out
 
 
+class LineTreesNoPunc(LineTrees):
+    MANIP = '.nopunc'
+    PATTERN_PREREQ_TYPES = [LineTrees]
+    DESCR_SHORT = 'de-punc-ed linetrees'
+    DESCR_LONG = (
+        "Remove punctuation from linetrees.\n"
+    )
+
+    def body(self):
+        def out(inputs):
+            def is_punc(x):
+                return x.c in PUNC
+
+            t = tree.Tree()
+            outputs = []
+            for i, x in enumerate(inputs):
+                x = x.strip()
+                if (x != '') and (x[0] != '%'):
+                    t.read(x)
+                    t.prune(is_punc)
+                    outputs.append(str(t) + '\n')
+
+            return outputs
+
+        return out
+
+
+class LineTreesNoCurrency(LineTrees):
+    MANIP = '.nocurr'
+    PATTERN_PREREQ_TYPES = [LineTrees]
+    DESCR_SHORT = 'de-currencied linetrees'
+    DESCR_LONG = (
+        "Remove currency tokens from linetrees.\n"
+    )
+
+    def body(self):
+        def out(inputs):
+            def is_curr(x):
+                return x.c == '$'
+
+            t = tree.Tree()
+            outputs = []
+            for i, x in enumerate(inputs):
+                x = x.strip()
+                if (x != '') and (x[0] != '%'):
+                    t.read(x)
+                    t.prune(is_curr)
+                    outputs.append(str(t) + '\n')
+
+            return outputs
+
+        return out
+
+
+class LineTreesReplaceParens(LineTrees):
+    MANIP = '.replparens'
+    PATTERN_PREREQ_TYPES = [LineTrees]
+    DESCR_SHORT = 'paren-replaced linetrees'
+    DESCR_LONG = (
+        "Replace parens with string tokens '-LRB-', '-RRB-'.\n"
+    )
+
+    def body(self):
+        def out(inputs):
+            mapper = {
+                '(': '-LRB-',
+                ')': '-RRB-'
+            }
+
+            def labelmap(x):
+                return mapper.get(x, x)
+
+            t = tree.Tree()
+            outputs = []
+            for i, x in enumerate(inputs):
+                x = x.strip()
+                if (x != '') and (x[0] != '%'):
+                    t.read(x)
+                    t.mapLabels(labelmap)
+                    outputs.append(str(t) + '\n')
+
+            return outputs
+
+        return out
+
+
+class LineTreesFromDeps(LineTrees):
+    MANIP = '.fromdeps'
+    PATTERN_PREREQ_TYPES = [TokDeps]
+    DESCR_SHORT = 'linetrees from dependencies'
+    DESCR_LONG = (
+        "Convert dependencies to linetrees using the Collins et al. (1999) algorithm.\n",
+        "Resultant trees are as flat as possible (i.e. as agnostic as possible about",
+        "internal structure when heads have multiple dependents)."
+    )
+
+    def body(self):
+        def out(inputs):
+            outputs = deps2trees(iter(inputs))
+
+            return outputs
+
+        return out
+
+
 class LineToksFromLineTrees(LineToks):
     PATTERN_PREREQ_TYPES = [LineTrees]
     DESCR_SHORT = 'linetoks from linetrees'
@@ -322,6 +435,87 @@ class LineToksFromLineTrees(LineToks):
         return out
 
 
+class LineTreesConcat(LineTrees):
+    MANIP = '.concat'
+    PATTERN_PREREQ_TYPES = [LineTrees]
+    DESCR_SHORT = 'concatenated linetrees'
+    REPEATABLE_PREREQ = True
+    DESCR_LONG = (
+        "Concatenate linetrees files.\n"
+    )
+
+    def body(self):
+        def out(*args):
+            outputs = []
+            for x in args:
+                outputs += x
+            return outputs
+
+        return out
+
+
+class LineTreesConcatPrefix(LineTreesConcat):
+    HAS_PREFIX = True
+
+
+
+
+
+#####################################
+#
+# EDITABLETREES TYPES
+#
+#####################################
+
+
+class EditableTreesFromLineTrees(EditableTrees):
+    MANIP = '.fromlinetrees'
+    PATTERN_PREREQ_TYPES = [LineTrees]
+    DESCR_SHORT = 'linetrees from editabletrees'
+    DESCR_LONG = "Convert editabletrees into linetrees.\n"
+
+    @classmethod
+    def other_prereq_paths(cls, path):
+        return ['bin/indent']
+
+
+    def body(self):
+        out = "cat %s | %s  >  %s" % (
+            self.pattern_prereqs()[0].path,
+            self.other_prereqs()[0].path,
+            self.path
+        )
+
+        return out
+
+
+class EditableTreesNumbered(EditableTrees):
+    MANIP = '.numbered'
+    PATTERN_PREREQ_TYPES = [EditableTrees]
+    STATIC_PREREQ_TYPES = [ScriptsMaketreesnumbered]
+    DESCR_SHORT = 'numbered editabletrees'
+    DESCR_LONG = "Add line numbers to editable trees.\n"
+
+    def body(self):
+        out = "cat %s | perl %s  >  %s" % (
+            self.pattern_prereqs()[0].path,
+            self.static_prereqs()[0].path,
+            self.path
+        )
+
+        return out
+
+
+
+
+
+#####################################
+#
+# LINETOKS TYPES
+#
+#####################################
+
+
 class LineToksMorphed(LineToks):
     MANIP = '.morph'
     PATTERN_PREREQ_TYPES = [LineToks]
@@ -334,6 +528,22 @@ class LineToksMorphed(LineToks):
             self.pattern_prereqs()[0].path,
             self.path,
         )
+
+        return out
+
+
+class LineToksDelim(LineToks):
+    MANIP = '.delim'
+    PATTERN_PREREQ_TYPES = [LineToks]
+    DESCR_SHORT = 'delimited linetoks'
+    DESCR_LONG = 'Add "!ARTICLE" delimiter to start of linetoks, if not already present'
+
+    def body(self):
+        def out(inputs):
+            if len(inputs) == 0 or inputs[0].strip() != '!ARTICLE':
+                inputs.insert(0, '!ARTICLE\n')
+
+            return inputs
 
         return out
 
@@ -355,30 +565,102 @@ class LineToksReversed(LineToks):
         return out
 
 
-class LineTreesMerged(LineTrees):
-    MANIP = '.merged'
+
+
+
+#####################################
+#
+# PCFG RULES TYPES
+#
+#####################################
+
+
+class RulesFromLineTrees(Rules):
     PATTERN_PREREQ_TYPES = [LineTrees]
-    DESCR_SHORT = 'merged linetrees'
-    REPEATABLE_PREREQ = True
-    DESCR_LONG = (
-        "Concatenate linetrees files.\n"
-    )
+    STATIC_PREREQ_TYPES = [ScriptsTrees2rules]
+    DESCR_SHORT = 'rules from linetrees'
+    DESCR_LONG = 'Convert linetrees into table of CFG rules'
 
     def body(self):
-        def out(*args):
-            outputs = []
-            for x in args:
-                outputs += x
-            return outputs
+        out = 'cat %s | perl %s > %s' % (
+            self.pattern_prereqs()[0].path,
+            self.static_prereqs()[0].path,
+            self.path
+        )
+        
         return out
 
 
-class LineTreesMergedPrefix(LineTreesMerged):
-    HAS_PREFIX = True
+
+
+
+#####################################
+#
+# PCFG MODEL TYPES
+#
+#####################################
+
+
+class ModelFromRules(Model):
+    PATTERN_PREREQ_TYPES = [Rules]
+    DESCR_SHORT = 'model from rules'
+    DESCR_LONG = 'Compute PCFG from table of CFG rules'
+
+    def body(self):
+        out = (
+            """cat %s | sort | uniq -c | sort -nr | awk '{"wc -l %s | cut -d\\" \\" -f1" | """
+            """getline t; u = $1; $1 = u/t; print;}' | awk '{p = $1; for (i=1;i<NF;i++) $i=$(i+1);$NF="="; """
+            """$(NF + 1)=p; tmp=$2;$2=$3;$3=tmp;$1="R";print;}' > %s"""
+        ) % (
+            self.pattern_prereqs()[0].path,
+            self.pattern_prereqs()[0].path,
+            self.path
+        )
+
+        return out
+
+
+class ModelHead(Model):
+    MANIP = '.head'
+    PATTERN_PREREQ_TYPES = [Model]
+    DESCR_SHORT = 'headmodel'
+    DESCR_LONG = 'Compute headedness model (probs of head given parent) from a PCFG model'
+
+    def body(self):
+        def out(inputs):
+            outputs = rules2headmodel(inputs)
+
+            return outputs
+
+        return out
 
 
 
 
 
+#####################################
+#
+# TOKDEPS TYPES
+#
+#####################################
 
 
+class TokDepsFromLineTrees(TokDeps):
+    PATTERN_PREREQ_TYPES = [LineTrees]
+    DESCR_SHORT = 'tokdeps from linetrees'
+    DESCR_LONG = 'Compute dependency representation from linetrees file, using empirically-derived head probabilities'
+
+    def body(self):
+        def out(*args):
+            trees = args[0]
+            headmodel = args[0]
+
+            outputs = trees2deps(trees, headmodel)
+
+            return outputs
+
+        return out
+
+    @classmethod
+    def other_prereq_paths(cls, path):
+        return [cls.strip_suffix(path) + '.head.model']

@@ -2,7 +2,6 @@ import sys
 import os
 import shutil
 import numpy as np
-import time
 import itertools
 import re
 import pickle
@@ -12,7 +11,7 @@ if sys.version_info[0] == 2:
 else:
     import configparser
 
-from .util import tostderr
+from mbbuild.util.general import tostderr
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,6 +52,26 @@ DELIM = [
     '+'
 ]
 NON_VAR_CHARS = re.compile('\W')
+PUNC = [
+    ",",
+    ".",
+    "``",
+    "`",
+    "--",
+    "''",
+    "'",
+    "...",
+    "?",
+    "!",
+    ":",
+    ";",
+    "(",
+    ")",
+    "-RRB-",
+    "-LRB-",
+    "-LCB-",
+    "-RCB-"
+]
 
 
 def normalize_class_name(name):
@@ -284,6 +303,7 @@ class Graph(object):
                 num_pad = max_num_len - len(str(i)) + 1
                 report += '  ' + '%d. ' % (i + 1) + ' ' * num_pad + '%s\n' % t
             report += '\nAttempted dependency paths:\n'
+            report += '(numbers index dependencies, dashes delimit alternatives)\n'
             report += self.report_failure(self.failed_targets_all_paths, indent=2) + '\n'
 
             tostderr(report)
@@ -317,6 +337,7 @@ class Graph(object):
                             p.set_static_prereqs(stat)
                             p.set_other_prereqs(oth)
                         p.dump = True
+                        p.set_dump()
                         p.intermediate = False
                         successes.add(p)
                     elif match_cur:
@@ -528,14 +549,19 @@ class Graph(object):
             num_pad = max_num_len - len(str(i)) + 1
             if isinstance(x, FailureSet):
                 if len(x) > 0:
-                    for y in x:
-                        out += ' ' * (indent) + '%d.' % (i+1) + ' ' * num_pad + 'FAIL: ' + y.path + ' (%s)\n' % y.cls.__name__
-                        out += self.report_failure(y.pattern_prereqs_all_paths() + y.other_prereqs_all_paths(), indent=indent+num_pad+2)
+                    for j, y in enumerate(x):
+                        if j == 0:
+                            out += ' ' * (indent) + '%d.' % (i+1) + ' ' * num_pad + '- FAIL: ' + y.path + ' (%s)\n' % y.cls.__name__
+                        else:
+                            out += ' ' * (indent) + ' ' * (max_num_len + 2) + '- FAIL: ' + y.path + ' (%s)\n' % y.cls.__name__
+                        out += self.report_failure(y.pattern_prereqs_all_paths() + y.other_prereqs_all_paths(), indent=indent+num_pad+4)
             elif isinstance(x, SuccessSet):
                 if len(x) > 0:
-                    for y in x:
-                        out += ' ' * (indent) + '%d.' % (i+1) + ' ' * num_pad + 'PASS: ' + y.path + ' (%s)\n' % y.__class__.__name__
-                        out += self.report_failure(y.pattern_prereqs_all_paths() + y.other_prereqs_all_paths(), indent=indent+num_pad+2)
+                    for j, y in enumerate(x):
+                        if j == 0:
+                            out += ' ' * (indent) + '%d.' % (i+1) + ' ' * num_pad + '- PASS: ' + y.path + ' (%s)\n' % y.__class__.__name__
+                        else:
+                            out += ' ' * (indent) + '-' + ' ' * (max_num_len + 2) + '- PASS: ' + y.path + ' (%s)\n' % y.__class__.__name__
             elif isinstance(x, str):
                 out += ' ' * (indent) + '%d.' % (i+1) + ' ' * num_pad + 'FAIL: ' + x + '\n'
                 out += ' ' * (indent + max_num_len + 8) + 'Path does not match any existing constructor\n'
@@ -651,7 +677,6 @@ class MBType(object):
     MANIP = ''
     PATTERN_PREREQ_TYPES = []
     STATIC_PREREQ_TYPES = []
-    OTHER_PREREQ_TYPES = []
     ARG_TYPES = []
     CONFIG_KEYS = []
     FILE_TYPE = 'text' # one of ['text', 'python', None], for text, python-readable binary (pickle) or other (non-python-readable) file, respectively
