@@ -32,9 +32,65 @@ class LineTreesNatstorPTB(LineTrees):
 
     def body(self):
         out = "cat %s | sed 's/\\r//g' | perl %s > %s" % (
-            self.static_prereqs[0].path,
-            self.static_prereqs[1].path,
+            self.static_prereqs()[0].path,
+            self.static_prereqs()[1].path,
             self.path
         )
 
         return out
+
+class LineToksNatstor(LineToks):
+    MANIP = 'naturalstories'
+    DESCR_SHORT = 'naturalstories linetoks'
+    DESCR_LONG = (
+        'PTB Tokenized sentences (linetoks) for the Natural Stories corpus'
+    )
+
+    def body(self):
+        def out(inputs):
+            trace = re.compile('\*')
+
+            t = tree.Tree()
+            outputs = []
+            for x in inputs:
+                x = x.strip()
+                if (x != '') and (x[0] != '%'):
+                    # Extract words
+                    t.read(x)
+                    all_words = t.words()
+                    out = ''
+                    for w in all_words:
+                        if not trace.match(w):
+                            if out != '':
+                                out += ' '
+                            out += w
+                    out += '\n'
+
+                    # Normalize sentence
+                    out = out.replace(
+                        '``', "'"
+                    ).replace(
+                        "''", "'"
+                    ).replace(
+                        "(",
+                        "-LRB-"
+                    ).replace(
+                        ")",
+                        "-RRB-"
+                    ).replace(
+                        "peaked",
+                        "peeked"
+                    )
+
+                    outputs.append(out)
+
+            return outputs
+
+        return out
+
+    @classmethod
+    def other_prereq_paths(self, path):
+        directory = os.path.dirname(path)
+        filename = 'naturalstories.penn.linetrees'
+
+        return [os.path.join(directory, filename)]

@@ -9,41 +9,49 @@ def create_classes_from_ptb_dir(directory, name='WSJ'):
         src_class_name = '%sSection%sSrc' % (name, sect)
         def section(cls):
             return cls.SECTION
+        def corpus(cls):
+            return cls.CORPUS
 
         attr_dict = {
             'PARENT_RESOURCE': PennTreebankRepo,
             'DEFAULT_LOCATION': DEFAULT_LOCATION,
+            'CORPUS': name.lower(),
             'SECTION': sect,
             'DESCR_SHORT': descr,
             'DESCR_LONG': descr,
+            'corpus': corpus,
             'section': section
         }
         new_class = type(src_class_name, (ExternalResource,), attr_dict)
         new_class.section = classmethod(section)
+        new_class.corpus = classmethod(corpus)
         globals()[src_class_name] = new_class
 
         descr = '%s section %s' % (name, sect)
         class_name = '%sSection%s' % (name, sect)
         MANIP = '%s%s' % (name.lower(), sect)
         def body(self):
-            src_path = self.static_prereqs[0].path
+            src_path = self.static_prereqs()[0].path
             mrg = [os.path.join(src_path, p) for p in sorted(os.listdir(src_path)) if p.endswith('.mrg')]
 
-            out = "cat %s | perl %s | awk '/^\s*\(/' > %s" % (' '.join(mrg), self.static_prereqs[1].path, self.path)
+            out = "cat %s | perl %s | awk '/^\s*\(/' > %s" % (' '.join(mrg), self.static_prereqs()[1].path, self.path)
 
             return out
 
         attr_dict = {
             'MANIP': MANIP,
             'STATIC_PREREQ_TYPES': [globals()[src_class_name], ScriptsEditabletrees2linetrees],
+            'CORPUS': name.lower(),
             'SECTION': sect,
             'DESCR_SHORT': descr,
             'DESCR_LONG': descr,
             'body': body,
+            'corpus': corpus,
             'section': section
         }
         new_class = type(class_name, (LineTrees,), attr_dict)
         new_class.section = classmethod(section)
+        new_class.corpus = classmethod(corpus)
         out.append(new_class)
         globals()[class_name] = new_class
 
@@ -111,7 +119,7 @@ class PTBSections(LineTrees):
         return False
 
     @classmethod
-    def path_parser(cls, path):
+    def parse_ptb_sections(cls, path):
         prefix, corpus, start, end = re.match('(.*)(wsj|swbd|brown)(.+)to(.+)%s' % cls.suffix(), path).groups()
         return {
             'basename': os.path.normpath(prefix),
@@ -121,28 +129,15 @@ class PTBSections(LineTrees):
         }
 
     @classmethod
-    def parse_path(cls, path):
-        out = {}
-        path = os.path.normpath(path)
-        if cls.match(path):
-            parsed = cls.path_parser(path)
-            prereq_types = cls.prereq_types(path)
-            prereqs = []
-            for p in prereq_types:
-                basename = parsed['basename']
-                corpus = parsed['corpus']
-                sect = p.section()
-                prereqs.append(os.path.join(basename, corpus + sect + p.suffix()))
-        out['prereqs'] = prereqs
-
-        return out
-
-    @classmethod
-    def prereq_types(cls, path=None):
+    def other_prereq_paths(cls, path):
         if path is None:
             sects = WSJ_SECTIONS + SWBD_SECTIONS + BROWN_SECTIONS
+            dirname = ''
+            paths = ['(%s)' % os.path.join(dirname, s.corpus() + s.section() + s.suffix()) for s in sects]
+
         else:
-            parsed = cls.path_parser(path)
+            parsed = cls.parse_ptb_sections(path)
+            dirname = os.path.dirname(path)
 
             s_ix = None
             e_ix = None
@@ -170,7 +165,9 @@ class PTBSections(LineTrees):
 
             sects = sects[s_ix:e_ix + 1]
 
-        return sects
+            paths = [os.path.join(dirname, s.corpus() + s.section() + s.suffix()) for s in sects]
+
+        return paths
 
     @classmethod
     def syntax_str(cls):
@@ -183,3 +180,4 @@ class PTBSections(LineTrees):
                 outputs += x
             return outputs
         return out
+

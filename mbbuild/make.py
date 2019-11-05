@@ -30,4 +30,8 @@ if __name__ == '__main__':
         sys.stderr.write(g.pretty_print_paths())
         exit()
 
+    t0 = time.time()
     out = g.get(dry_run=args.dry_run)
+    t1 = time.time()
+
+    print('\nBuild time: %.1fs' % (t1 - t0))

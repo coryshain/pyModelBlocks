@@ -21,10 +21,29 @@ DEFAULT_PATH = os.path.join(ROOT_DIR, '.defaults.ini')
 CONFIG_PATH = os.path.join(ROOT_DIR, '.config.ini')
 HISTORY_PATH = os.path.join(ROOT_DIR, '.hist.ini')
 
-DEFAULT_CONFIG = configparser.ConfigParser()
-DEFAULT_CONFIG.optionxform = str
-DEFAULT_CONFIG.read(DEFAULT_PATH)
-DEFAULTS = DEFAULT_CONFIG['settings']
+DEFAULT = configparser.ConfigParser()
+DEFAULT.optionxform = str
+DEFAULT.read(DEFAULT_PATH)
+DEFAULT_SETTINGS = DEFAULT['settings']
+
+if not os.path.exists(CONFIG_PATH):
+    with open(CONFIG_PATH, 'w') as f:
+        f.write('[settings]\n\n')
+USER = configparser.ConfigParser()
+USER.optionxform = str
+USER.read(CONFIG_PATH)
+USER_SETTINGS = USER['settings']
+
+if not os.path.exists(HISTORY_PATH):
+    with open(HISTORY_PATH, 'w') as f:
+        f.write('[settings]\n\n')
+
+HISTORY = configparser.ConfigParser()
+HISTORY.optionxform = str
+HISTORY.read(HISTORY_PATH)
+HISTORY_SETTINGS = HISTORY['settings']
+
+CFLAGS = USER_SETTINGS.get('cflags', DEFAULT_SETTINGS['cflags'])
 
 
 DELIM = [
@@ -57,55 +76,61 @@ def create_classes_from_dir(directory, parent_name=''):
             class_name = normalize_class_name(descr)
 
             if os.path.isdir(path):
+                descr_long = descr + ' directory'
                 parent_name_cur = parent_name + class_name
                 out += create_classes_from_dir(path, parent_name=parent_name_cur)
             else:
-                class_name = parent_name + class_name
+                descr_long = descr + ' static file'
 
-                attr_dict = {
-                    'DEFAULT_LOCATION': path,
-                    'DESCR_SHORT': descr,
-                    'DESCR_LONG': descr + ' utility'
-                }
+            class_name = parent_name + class_name
 
-                out.append(type(class_name, (StaticResource,), attr_dict))
+            attr_dict = {
+                'DEFAULT_LOCATION': path,
+                'DESCR_SHORT': descr,
+                'DESCR_LONG': descr_long
+            }
+
+            out.append(type(class_name, (StaticResource,), attr_dict))
 
     return out
 
 
 def read_data(path, read_mode='r'):
-    is_text = read_mode[-1] != 'b'
     data = None
-    if os.path.exists(path):
-        if os.path.isfile(path):
-            with open(path, read_mode) as f:
-                if is_text:
-                    data = f.readlines()
-                else:
-                    data = pickle.load(f)
-        else:
-            data = 'Directory target'
+    if read_mode is not None:
+        is_text = read_mode[-1] != 'b'
+        data = None
+        if os.path.exists(path):
+            if os.path.isfile(path):
+                with open(path, read_mode) as f:
+                    if is_text:
+                        data = f.readlines()
+                    else:
+                        data = pickle.load(f)
+            else:
+                data = 'Directory target'
 
     return data
 
 
-def dump_data(data, buffer=None, out_mode='w'):
-    is_text = out_mode[-1] != 'b'
-    close_after = False
+def dump_data(data, buffer=None, write_mode='w'):
+    if write_mode is not None:
+        is_text = write_mode[-1] != 'b'
+        close_after = False
 
-    if buffer is not None:
-        if isinstance(buffer, str):
-            buffer = open(buffer, out_mode)
-            close_after = True
+        if buffer is not None:
+            if isinstance(buffer, str):
+                buffer = open(buffer, write_mode)
+                close_after = True
 
-        if is_text:
-            for l in data:
-                buffer.write(l)
-        else:
-            pickle.dump(data, buffer)
+            if is_text:
+                for l in data:
+                    buffer.write(l)
+            else:
+                pickle.dump(data, buffer)
 
-        if close_after:
-            buffer.close()
+            if close_after:
+                buffer.close()
 
 
 def get_timestamp(path):
@@ -198,15 +223,29 @@ class Arg(object):
         return self.key + 'VAL'
 
 
+class SuccessSet(set):
+    def add(self, other):
+        assert not isinstance(other, MBFailure), 'Cannot add a failed target to SuccessSet object'
+        super(SuccessSet, self).add(other)
+
+
+class FailureSet(set):
+    def add(self, other):
+        assert isinstance(other, MBFailure), 'FailureSet object can only contain members of type MBFailure'
+        super(FailureSet, self).add(other)
+
+
 class Graph(object):
     def __init__(self, target_paths=None, process_scheduler=None):
         self.target_paths = None
         self.targets_all_paths = None
         self.targets = None
+        self.failed_targets_all_paths = None
+        self.failed_targets_all_paths = None
         self.process_scheduler = process_scheduler
         self.nodes = {}
 
-        self.add_targets(target_paths)
+        self.build(target_paths)
 
     def __iter__(self):
         return self.nodes.__iter__()
@@ -221,7 +260,7 @@ class Graph(object):
     def concurrent(self):
         return self.process_scheduler is not None
 
-    def add_targets(self, targets):
+    def build(self, targets):
         if self.target_paths is None:
             self.target_paths = []
         if targets is not None:
@@ -237,7 +276,241 @@ class Graph(object):
             self.target_paths = targets
 
             self.build_graph()
-            # self.build_pipeline()
+
+        if len(self.failed_targets_all_paths) > 0:
+            report = 'The following targets failed and will be skipped:\n'
+            max_num_len = len(str(len(self.failed_target_paths)))
+            for i, t in enumerate(self.failed_target_paths):
+                num_pad = max_num_len - len(str(i)) + 1
+                report += '  ' + '%d. ' % (i + 1) + ' ' * num_pad + '%s\n' % t
+            report += '\nAttempted dependency paths:\n'
+            report += self.report_failure(self.failed_targets_all_paths, indent=2) + '\n'
+
+            tostderr(report)
+
+    def build_graph(self):
+        # Compute all dependency paths to target set
+        targets_all_paths = []
+        for target_path in self.target_paths:
+            successes = SuccessSet()
+            failures = FailureSet()
+            inheritors = MBType.inheritors() - {MBFailure}
+
+            for c in inheritors:
+                if not issubclass(c, StaticResource) and not c.is_abstract():
+                    subgraph = self.build_subgraph(c, target_path)
+                    pat = subgraph['pattern_prereqs_all_paths']
+                    stat = subgraph['static_prereqs']
+                    oth = subgraph['other_prereqs_all_paths']
+                    success_ratio_cur = subgraph['success_ratio']
+                    match_cur = subgraph['match']
+
+                    if success_ratio_cur == 1:
+                        p = self[(c, target_path)]
+                        if p is None:
+                            if issubclass(c, StaticResource):
+                                p = c()
+                            else:
+                                p = c(target_path)
+                            self.add_node(p)
+                            p.set_pattern_prereqs(pat)
+                            p.set_static_prereqs(stat)
+                            p.set_other_prereqs(oth)
+                        p.dump = True
+                        p.intermediate = False
+                        successes.add(p)
+                    elif match_cur:
+                        p = MBFailure(target_path, c)
+                        p.set_pattern_prereqs(pat)
+                        p.set_static_prereqs(stat)
+                        p.set_other_prereqs(oth)
+                        failures.add(p)
+
+            if len(successes) > 0:
+                to_append = successes
+            elif len(failures) > 0:
+                to_append = failures
+            else:
+                to_append = target_path
+
+            targets_all_paths.append(to_append)
+
+        # Filter out failed dependency paths, report problems if none succeed
+        exists = [True if isinstance(x, SuccessSet) else False for x in targets_all_paths]
+
+        targets_all_paths_tmp = targets_all_paths
+        targets_all_paths = []
+        failed_targets_all_paths = []
+        failed_target_paths = []
+        for i, x in enumerate(exists):
+            if x:
+                targets_all_paths.append(targets_all_paths_tmp[i])
+            else:
+                failed_targets_all_paths.append(targets_all_paths_tmp[i])
+                failed_target_paths.append(self.target_paths[i])
+
+        self.targets_all_paths = targets_all_paths
+        self.targets = []
+        for t in self.targets_all_paths:
+            candidates = list(t)
+            self.targets.append(candidates[0])
+        self.failed_targets_all_paths = failed_targets_all_paths
+        self.failed_target_paths = failed_target_paths
+
+
+    def build_subgraph(self, cls, path):
+        pattern_prereqs_all_paths = None
+        static_prereqs = None
+        other_prereqs_all_paths = None
+
+        parsed = cls.parse_path(path)
+        if parsed is not None:
+            # STATIC PREREQS
+            static_prereq_types = cls.static_prereq_types()[:]
+            static_prereqs = []
+            for c in static_prereq_types:
+                prereq_path = c.infer_paths()[0]
+                subgraph = self.build_subgraph(c, prereq_path)
+                pat = subgraph['pattern_prereqs_all_paths']
+                stat = subgraph['static_prereqs']
+                oth = subgraph['other_prereqs_all_paths']
+
+                p = self[(c, prereq_path)]
+                if p is None:
+                    p = c()
+                    self.add_node(p)
+                    p.set_pattern_prereqs(pat)
+                    p.set_static_prereqs(stat)
+                    p.set_other_prereqs(oth)
+                static_prereqs.append(p)
+            static_prereqs = static_prereqs
+
+            has_buildable_prereqs = (len(cls.pattern_prereq_types()) > 0) or (len(cls.other_prereq_paths(path)) > 0)
+
+            if has_buildable_prereqs:
+                # PATTERN PREREQS
+                pattern_prereq_types = cls.pattern_prereq_types()[:]
+                if cls.repeatable_prereq():
+                    while len(pattern_prereq_types) < len(parsed['prereqs']):
+                        pattern_prereq_types.insert(0, pattern_prereq_types[0])
+    
+                pattern_prereqs_all_paths = []
+                for (P, prereq_path) in zip(pattern_prereq_types, parsed['prereqs']):
+                    successes = SuccessSet()
+                    failures = FailureSet()
+                    inheritors = (P.inheritors() | {P}) - {MBFailure}
+
+                    for c in inheritors:
+                        if not c.is_abstract():
+                            subgraph = self.build_subgraph(c, prereq_path)
+                            pat = subgraph['pattern_prereqs_all_paths']
+                            stat = subgraph['static_prereqs']
+                            oth = subgraph['other_prereqs_all_paths']
+                            success_ratio_cur = subgraph['success_ratio']
+                            match_cur = subgraph['match']
+
+                            if success_ratio_cur == 1:
+                                p = self[(c, prereq_path)]
+                                if p is None:
+                                    if issubclass(c, StaticResource):
+                                        p = c()
+                                    else:
+                                        p = c(prereq_path)
+                                    self.add_node(p)
+                                    p.set_pattern_prereqs(pat)
+                                    p.set_static_prereqs(stat)
+                                    p.set_other_prereqs(oth)
+                                p.set_dump()
+                                successes.add(p)
+                            elif match_cur:
+                                p = MBFailure(prereq_path, c)
+                                p.set_pattern_prereqs(pat)
+                                p.set_static_prereqs(stat)
+                                p.set_other_prereqs(oth)
+                                failures.add(p)
+
+                    if len(successes) > 0:
+                        to_append = successes
+                    elif len(failures) > 0:
+                        to_append = failures
+                    else:
+                        to_append = prereq_path
+
+                    pattern_prereqs_all_paths.append(to_append)
+    
+                # OTHER PREREQS
+                other_prereq_paths = cls.other_prereq_paths(path)
+                other_prereqs_all_paths = []
+                for prereq_path in other_prereq_paths:
+                    prereq_path = os.path.normpath(prereq_path)
+                    successes = SuccessSet()
+                    failures = FailureSet()
+                    inheritors = MBType.inheritors() - {MBFailure}
+
+                    for c in inheritors:
+                        if not c.is_abstract():
+                            subgraph = self.build_subgraph(c, prereq_path)
+                            pat = subgraph['pattern_prereqs_all_paths']
+                            stat = subgraph['static_prereqs']
+                            oth = subgraph['other_prereqs_all_paths']
+                            success_ratio_cur = subgraph['success_ratio']
+                            match_cur = subgraph['match']
+
+                            if success_ratio_cur == 1:
+                                p = self[(c, prereq_path)]
+                                if p is None:
+                                    if issubclass(c, StaticResource):
+                                        p = c()
+                                    else:
+                                        p = c(prereq_path)
+                                    self.add_node(p)
+                                    p.set_pattern_prereqs(pat)
+                                    p.set_static_prereqs(stat)
+                                    p.set_other_prereqs(oth)
+                                p.set_dump()
+                                successes.add(p)
+                            elif match_cur:
+                                p = MBFailure(prereq_path, c)
+                                p.set_pattern_prereqs(pat)
+                                p.set_static_prereqs(stat)
+                                p.set_other_prereqs(oth)
+                                failures.add(p)
+
+                    if len(successes) > 0:
+                        to_append = successes
+                    elif len(failures) > 0:
+                        to_append = failures
+                    else:
+                        to_append = prereq_path
+
+                    other_prereqs_all_paths.append(to_append)
+            else:
+                pattern_prereqs_all_paths = []
+                other_prereqs_all_paths = []
+
+            success_ratio_num = 0
+            success_ratio_denom = 0
+            for x in pattern_prereqs_all_paths + other_prereqs_all_paths:
+                if isinstance(x, SuccessSet):
+                    success_ratio_num += 1
+                success_ratio_denom += 1
+    
+            if success_ratio_denom > 0:
+                success_ratio = success_ratio_num / success_ratio_denom
+            else:
+                success_ratio = 1
+        else:
+            success_ratio = 0
+
+        match = cls.match(path)
+
+        return {
+            'pattern_prereqs_all_paths': pattern_prereqs_all_paths,
+            'static_prereqs': static_prereqs,
+            'other_prereqs_all_paths': other_prereqs_all_paths,
+            'success_ratio': success_ratio,
+            'match': match
+        }
 
     def add_node(self, node):
         assert not (type(node), node.path) in self.nodes, 'Attempted to re-insert and existing key: %s' % str(type(node), node.path)
@@ -247,96 +520,27 @@ class Graph(object):
         node.graph = self
         node.process_scheduler = self.process_scheduler
 
-    def build_graph(self):
-        # Compute all dependency paths to target set
-        targets_all_paths = []
-        for target_path in self.target_paths:
-            target = set()
-            inheritors = MBType.inheritors()
-            for c in inheritors:
-                target_prereqs_cur, target_static_prereqs_cur = self.build_subgraph(c, target_path)
-                if target_prereqs_cur is not None:
-                    p = self[(c, target_path)]
-                    if p is None:
-                        if issubclass(c, StaticResource):
-                            p = c()
-                        else:
-                            p = c(target_path)
-                        self.add_node(p)
-                        p.add_prereqs(prereqs=target_prereqs_cur, static_prereqs=target_static_prereqs_cur)
-                    p.dump = True
-                    p.intermediate = False
-                    target.add(p)
-            targets_all_paths.append(target)
+    def report_failure(self, targets, indent=0):
+        out = ''
 
-        # Filter out failed dependency paths, report problems if none succeed
-        exists = [True if len(x) > 0 else False for x in targets_all_paths]
-        self.targets_all_paths = targets_all_paths
+        max_num_len = len(str(len(targets)))
+        for i, x in enumerate(targets):
+            num_pad = max_num_len - len(str(i)) + 1
+            if isinstance(x, FailureSet):
+                if len(x) > 0:
+                    for y in x:
+                        out += ' ' * (indent) + '%d.' % (i+1) + ' ' * num_pad + 'FAIL: ' + y.path + ' (%s)\n' % y.cls.__name__
+                        out += self.report_failure(y.pattern_prereqs_all_paths() + y.other_prereqs_all_paths(), indent=indent+num_pad+2)
+            elif isinstance(x, SuccessSet):
+                if len(x) > 0:
+                    for y in x:
+                        out += ' ' * (indent) + '%d.' % (i+1) + ' ' * num_pad + 'PASS: ' + y.path + ' (%s)\n' % y.__class__.__name__
+                        out += self.report_failure(y.pattern_prereqs_all_paths() + y.other_prereqs_all_paths(), indent=indent+num_pad+2)
+            elif isinstance(x, str):
+                out += ' ' * (indent) + '%d.' % (i+1) + ' ' * num_pad + 'FAIL: ' + x + '\n'
+                out += ' ' * (indent + max_num_len + 8) + 'Path does not match any existing constructor\n'
 
-        null_targs = []
-        for i, x in enumerate(exists):
-            if not x:
-                null_targs.append(self.target_paths[i])
-
-        null_targs_str = ', '.join(null_targs)
-        assert len(null_targs) == 0, 'Recipes could not be found for some targets: %s' % null_targs_str
-
-        self.targets = []
-        for t in self.targets_all_paths:
-            candidates = list(t)
-            self.targets.append(candidates[0])
-
-    def build_subgraph(self, cls, path):
-        prereqs_all_paths = None
-        static_prereqs = None
-
-        parsed = cls.parse_path(path)
-        if parsed is not None:
-            # STATIC PREREQS
-            static_prereq_types = cls.static_prereq_types()[:]
-            static_prereqs = []
-            for c in static_prereq_types:
-                prereq_path = c.infer_paths()[0]
-                prereqs_cur, static_prereqs_cur = self.build_subgraph(c, prereq_path)
-                p = self[(c, prereq_path)]
-                if p is None:
-                    p = c()
-                    self.add_node(p)
-                    p.add_prereqs(prereqs=prereqs_cur, static_prereqs=static_prereqs_cur)
-                static_prereqs.append(p)
-            static_prereqs = static_prereqs
-
-            if len(cls.prereq_types(path)) == 0:
-                return [], static_prereqs
-
-            # DYNAMIC PREREQS
-            prereq_types = cls.prereq_types(path)[:]
-            if cls.repeatable_prereq():
-                while len(prereq_types) < len(parsed['prereqs']):
-                    prereq_types.insert(0, prereq_types[0])
-            prereqs_all_paths = []
-            for (P, prereq_path) in zip(prereq_types, parsed['prereqs']):
-                dep = set()
-                inheritors = P.inheritors().union({P})
-                for c in inheritors:
-                    prereqs_cur, static_prereqs_cur = self.build_subgraph(c, prereq_path)
-                    if prereqs_cur is not None:
-                        p = self[(c, prereq_path)]
-                        if p is None:
-                            if issubclass(c, StaticResource):
-                                p = c()
-                            else:
-                                p = c(prereq_path)
-                            self.add_node(p)
-                            p.add_prereqs(prereqs=prereqs_cur, static_prereqs=static_prereqs_cur)
-                        if isinstance(p.body(), str): # is a shell command and needs to be dumped
-                            p.dump = True
-                        dep.add(p)
-                if len(dep) == 0:
-                    return None, None
-                prereqs_all_paths.append(dep)
-
-        return prereqs_all_paths, static_prereqs
+        return out
 
     def compute_paths(self, node=None):
         prereq_sets = set()
@@ -357,7 +561,7 @@ class Graph(object):
                 deps = {(x,) for x in deps[0]}
             deps = {(node, x) for x in deps}
 
-            prereq_sets = prereq_sets.union(deps)
+            prereq_sets |= deps
         out = prereq_sets
         return out
 
@@ -384,19 +588,21 @@ class Graph(object):
     def get_garbage(self, force=False):
         garbage = set()
         for t in self.targets:
-            garbage = garbage.union(t.get_garbage(force=force))
+            garbage |= t.get_garbage(force=force)
 
         return garbage
 
     def update_history(self):
         for target in self.targets:
             target.update_history()
+        with open(HISTORY_PATH, 'w') as f:
+            HISTORY.write(f)
 
     def get(self, dry_run=False, force=False):
         # Make any needed directories
         directories_to_make = set()
         for t in self.targets:
-            directories_to_make = directories_to_make.union(t.directories_to_make(force=force))
+            directories_to_make |= t.directories_to_make(force=force)
         directories_to_make = sorted(list(directories_to_make))
         if len(directories_to_make) > 0:
             tostderr('Making directories:\n')
@@ -443,9 +649,12 @@ class Graph(object):
 class MBType(object):
     SUFFIX = ''
     MANIP = ''
-    PREREQ_TYPES = []
+    PATTERN_PREREQ_TYPES = []
     STATIC_PREREQ_TYPES = []
+    OTHER_PREREQ_TYPES = []
     ARG_TYPES = []
+    CONFIG_KEYS = []
+    FILE_TYPE = 'text' # one of ['text', 'python', None], for text, python-readable binary (pickle) or other (non-python-readable) file, respectively
 
     REPEATABLE_PREREQ = False
 
@@ -457,7 +666,8 @@ class MBType(object):
         "Abstract base class for ModelBlocks types.\n"
     )
 
-    def __init__(self, path, out_mode='w'):
+
+    def __init__(self, path):
         path = os.path.normpath(path)
         if path.endswith(self.suffix()):
             if self.suffix() != '':
@@ -477,13 +687,13 @@ class MBType(object):
 
         self.args = args
 
-        self.static_prereqs = None
-        self.prereqs_all_paths = None
-        self.prereqs = None
+        self.pattern_prereqs_all_paths_src = None
+        self.pattern_prereqs_src = None
+        self.static_prereqs_src = None
+        self.other_prereqs_all_paths_src = None
+        self.other_prereqs_src = None
         self.dependencies = None
 
-        self.out_mode = out_mode
-        self.is_text = out_mode[-1] != 'b'
         self.data = None
         self.set_data()
 
@@ -504,8 +714,13 @@ class MBType(object):
     @property
     def max_timestamp(self):
         max_timestamp = self.timestamp
-        for s in self.prereqs + self.static_prereqs:
-            max_timestamp = max(max_timestamp, s.max_timestamp)
+        for k, old, new in self.config_values():
+            if old != new:
+                max_timestamp = np.inf
+                break
+        if max_timestamp < np.inf:
+            for s in self.pattern_prereqs_src + self.static_prereqs_src + self.other_prereqs_src:
+                max_timestamp = max(max_timestamp, s.max_timestamp)
 
         return max_timestamp
 
@@ -531,12 +746,16 @@ class MBType(object):
         return cls.MANIP
 
     @classmethod
-    def prereq_types(cls, path=None):
-        return cls.PREREQ_TYPES
+    def pattern_prereq_types(cls):
+        return cls.PATTERN_PREREQ_TYPES
 
     @classmethod
     def static_prereq_types(cls):
         return cls.STATIC_PREREQ_TYPES
+
+    @classmethod
+    def other_prereq_paths(cls, path):
+        return []
 
     @classmethod
     def repeatable_prereq(cls):
@@ -555,6 +774,71 @@ class MBType(object):
         return cls.ARG_TYPES
 
     @classmethod
+    def config_keys(cls):
+        out = []
+        for x in cls.CONFIG_KEYS:
+            try:
+                key, default = x
+            except TypeError:
+                key = x
+                default = None
+            out.append((key, default))
+        return out
+
+    @classmethod
+    def config_values(cls):
+        out = []
+        for key, default in cls.config_keys():
+            val_prev = HISTORY_SETTINGS.get(key, None)
+            if val_prev is not None and key.endswith('_path'):
+                val_prev = os.path.normpath(val_prev)
+
+            val_cur = USER_SETTINGS.get(
+                key,
+                DEFAULT_SETTINGS.get(
+                    key,
+                    default
+                )
+            )
+            if val_cur is not None and key.endswith('_path'):
+                val_cur = os.path.normpath(val_cur)
+            out.append((key, val_prev, val_cur))
+
+        return out
+
+    @classmethod
+    def read_mode(cls):
+        file_type = cls.file_type()
+        if file_type == 'text':
+            return 'r'
+        elif file_type == 'python':
+            return 'rb'
+        elif file_type == None:
+            return None
+        else:
+            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'python', None]." % file_type)
+
+    @classmethod
+    def write_mode(cls):
+        file_type = cls.file_type()
+        if file_type == 'text':
+            return 'w'
+        elif file_type == 'python':
+            return 'wb'
+        elif file_type == None:
+            return None
+        else:
+            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'python', None]." % file_type)
+
+    @classmethod
+    def file_type(cls):
+        return cls.FILE_TYPE
+
+    @classmethod
+    def is_text(cls):
+        return cls.FILE_TYPE == 'text'
+
+    @classmethod
     def descr_short(cls):
         return cls.DESCR_SHORT
 
@@ -571,39 +855,36 @@ class MBType(object):
         out = set()
         for c in cls.__subclasses__():
             out.add(c)
-            out = out.union(c.inheritors())
+            out |= c.inheritors()
 
         return out
     
     @classmethod
-    def abstract(cls):
+    def is_abstract(cls):
         return cls.__name__ == 'MBType'
 
     @classmethod
     def match(cls, path):
-        out = not cls.abstract()
+        out = not cls.is_abstract()
         if out:
             suffix = cls.manip() + cls.suffix()
             out = path.endswith(suffix)
             if out:
-                if len(cls.prereq_types(path)) == 0:
+                prereq_types = cls.pattern_prereq_types()
+                if len(prereq_types) == 0:
                     out = os.path.basename(path[:-len(suffix)]) == ''
-                elif len(cls.prereq_types(path)) > 1 or cls.repeatable_prereq():
+                elif len(prereq_types) > 1 or cls.repeatable_prereq():
                     basenames = path[:-len(suffix)].split(DELIM[0])
                     if cls.has_prefix():
                         basenames = basenames[1:]
                     if cls.has_suffix():
                         basenames = basenames[:1]
-                    prereq_types = cls.PREREQ_TYPES[:]
+                    prereq_types = prereq_types[:]
                     if cls.repeatable_prereq():
                         while len(prereq_types) < len(basenames):
                             prereq_types.insert(0, prereq_types[0])
 
                     out = len(prereq_types) == len(basenames)
-
-            if cls.__name__ == 'LineTrees':
-                print(path)
-                print(out)
 
         return out
 
@@ -617,49 +898,14 @@ class MBType(object):
         return name_new
 
     @classmethod
-    def path_parser_no_args(cls, path):
-        return {'basename': cls.strip_suffix(path)}
-
-    @classmethod
-    def path_parser_args(cls, path):
-        basename = cls.strip_suffix(path)
-        basename_split = basename.split(DELIM[0])
-        basename = DELIM[0].join(basename_split[:-1])
-        out = {'basename': basename}
-        argstr = basename_split[-1]
-        argstr = argstr.split(DELIM[1])
-        args = [a for a in cls.arg_types() if a.positional]
-        kwargs = [a for a in cls.arg_types() if not a.positional]
-        assert len(args) <= len(argstr), 'Expected %d positional arguments, saw %d.' % (len(args), len(argstr))
-        for arg in args:
-            s = argstr.pop(0)
-            out[arg.key] = arg.read(s)
-        for s in argstr:
-            out_cur = None
-            for i in range(len(kwargs)):
-                kwarg = kwargs[i]
-                r = kwarg.read(s)
-                if r is not None:
-                    out_cur = {kwarg.key: r}
-                    kwargs.pop(i)
-                    break
-
-            assert out_cur is not None, 'Unrecognized keyword argument %d' % s
-            out.update(out_cur)
-
-        for kwarg in kwargs:
-            out[kwarg.key] = kwarg.default
-
-        return out
-
-    @classmethod
     def parse_args(cls, path):
         basename = cls.strip_suffix(path)
         out = {'basename': basename}
         if len(cls.arg_types()) > 0:
+            directory = os.path.dirname(basename)
             basename_split = os.path.basename(basename).split(DELIM[0])
             basename = DELIM[0].join(basename_split[:-1])
-            out = {'basename': basename}
+            out = {'basename': os.path.join(directory, basename)}
             argstr = basename_split[-1]
             argstr = argstr.split(DELIM[1])
             args = [a for a in cls.arg_types() if a.positional]
@@ -687,22 +933,14 @@ class MBType(object):
         return out
 
     @classmethod
-    def path_parser(cls, path):
-        if len(cls.arg_types()) == 0:
-            parser = cls.path_parser_no_args(path)
-        else:
-            parser = cls.path_parser_args(path)
-
-        return parser
-
-    @classmethod
     def parse_path(cls, path):
         out = None
         path = os.path.normpath(path)
         if cls.match(path):
             out = cls.parse_args(path)
+            out['prereqs'] = []
             prereqs = []
-            if len(cls.PREREQ_TYPES) > 1 or cls.repeatable_prereq():
+            if len(cls.pattern_prereq_types()) > 1 or cls.repeatable_prereq():
                 basename = out['basename']
                 directory = os.path.dirname(basename)
                 basename = os.path.basename(basename)
@@ -718,7 +956,7 @@ class MBType(object):
                 else:
                     suffix = ''
                 basenames = [os.path.join(directory, DELIM[0].join([y for y in (prefix, decrement_delimiters(x), suffix) if y != ''])) for x in basenames]
-                prereq_types = cls.prereq_types(path)[:]
+                prereq_types = cls.pattern_prereq_types()[:]
                 if cls.repeatable_prereq():
                     while len(prereq_types) < len(basenames):
                         prereq_types.insert(0, prereq_types[0])
@@ -726,8 +964,8 @@ class MBType(object):
                     name = b + p.suffix()
                     prereqs.append(name)
                 out['prereqs'] = prereqs
-            elif len(cls.PREREQ_TYPES) == 1:
-                prereqs.append(out['basename'] + cls.PREREQ_TYPES[0].suffix())
+            elif len(cls.pattern_prereq_types()) == 1:
+                prereqs.append(out['basename'] + cls.pattern_prereq_types()[0].suffix())
                 out['prereqs'] = prereqs
 
         return out
@@ -740,12 +978,19 @@ class MBType(object):
             out += 'URL:                  %s\n' % cls.url()
         out += 'Short description:    %s\n' % cls.descr_short()
         out += 'Detailed description: %s\n' % cls.descr_long()
-        out += 'Prerequisites'
-        if cls.repeatable_prereq():
-            out += ' (repeatable)'
-        out += ':\n'
-        for x in cls.prereq_types():
-            out += '  %s\n' % x.__name__
+        external_resources = [x for x in cls.static_prereq_types() if issubclass(x, ExternalResource)]
+        if len(external_resources) > 0:
+            out += 'External resources:\n'
+            for x in external_resources:
+                out += '  %s\n' % x.__name__
+        out += 'Prerequisites:\n'
+        for i, x in enumerate(cls.pattern_prereq_types()):
+            out += '  %s' % x.__name__
+            if i == 0 and cls.repeatable_prereq():
+                out += ' (repeatable)'
+            out += '\n'
+        for x in cls.other_prereq_paths(None):
+            out += '  %s\n' % x
         out += '\n'
         out += 'Syntax: ' + cls.syntax_str()
         out += '\n\n'
@@ -760,7 +1005,7 @@ class MBType(object):
             out = []
             if cls.has_prefix():
                 out.append('<PREFIX>')
-            for i, x in enumerate(cls.prereq_types()):
+            for i, x in enumerate(cls.pattern_prereq_types()):
                 name = x.__name__
                 if i == 0 and cls.repeatable_prereq():
                     s = '<%s>(.<%s>)+' % (name, name)
@@ -779,39 +1024,55 @@ class MBType(object):
 
         return out
 
+    def pattern_prereqs_all_paths(self):
+        return self.pattern_prereqs_all_paths_src
+
+    def pattern_prereqs(self):
+        return self.pattern_prereqs_src
+
+    def other_prereqs_all_paths(self):
+        return self.other_prereqs_all_paths_src
+
+    def other_prereqs(self):
+        return self.other_prereqs_src
+
+    def static_prereqs(self):
+        return self.static_prereqs_src
+
     def set_data(self, data=None):
-        if data is None:
-            if self.is_text:
-                read_mode = 'r'
-            else:
-                read_mode = 'rb'
-            if os.path.exists(self.path):
-                if os.path.isfile(self.path):
-                    with open(self.path, read_mode) as f:
-                        if self.is_text:
-                            data = f.readlines()
-                        else:
-                            data = pickle.load(f)
-                else:
-                    data = 'Directory target'
+        read_mode = self.read_mode()
+        if read_mode is not None:
+            if data is None:
+                if os.path.exists(self.path):
+                    if os.path.isfile(self.path):
+                        with open(self.path, read_mode) as f:
+                            if self.is_text():
+                                data = f.readlines()
+                            else:
+                                data = pickle.load(f)
+                    else:
+                        data = 'Directory target'
         self.data = data
     
     def body(self):
         raise NotImplementedError
 
     def body_args(self, dry_run=False):
-        args = self.prereq_data(dry_run=dry_run)
+        args = self.pattern_prereq_data(dry_run=dry_run) + self.other_prereq_data(dry_run=dry_run)
         for a in self.arg_types():
             args.append(self.args[a.key])
         args = tuple(args)
 
         return args
 
-    def prereq_data(self, dry_run=False):
-        return [x.get(dry_run=dry_run) for x in self.prereqs]
+    def pattern_prereq_data(self, dry_run=False):
+        return [x.get(dry_run=dry_run) for x in self.pattern_prereqs()]
     
     def static_prereq_data(self, dry_run=False):
-        return [x.get(dry_run=dry_run) for x in self.static_prereqs]
+        return [x.get(dry_run=dry_run) for x in self.static_prereqs()]
+
+    def other_prereq_data(self, dry_run=False):
+        return [x.get(dry_run=dry_run) for x in self.other_prereqs()]
 
     def get(self, dry_run=False, force=False):
         build = force or (self.max_timestamp > self.timestamp)
@@ -820,44 +1081,48 @@ class MBType(object):
             args = self.body_args(dry_run=dry_run)
 
             if isinstance(self.body(), str):
-                read_mode = self.out_mode.replace('w', 'r')
                 descr = body
+                mode = self.read_mode()
 
                 if dry_run:
-                    def fn(body, descr, dump, path, out_mode, *args):
+                    def fn(body, descr, dump, path, mode, *args):
                         tostderr(descr + '\n')
 
                         return None
 
                 else:
-                    def fn(body, descr, dump, path, out_mode, *args):
+                    def fn(body, descr, dump, path, mode, *args):
                         tostderr(descr + '\n')
 
                         returncode = os.system(body)
                         assert returncode == 0, 'Shell execution failed with return code %s' % returncode
 
-                        data = read_data(path, read_mode=read_mode)
+                        data = read_data(path, read_mode=mode)
 
                         return data
             else:
-                dest = self.path
+                if self.dump:
+                    dest = self.path
+                else:
+                    dest = None
                 if not isinstance(dest, str):
                     dest = 'internal variable'
                 descr = 'Dump %s to %s' % (self.descr_short(), dest)
+                mode = self.write_mode()
 
                 if dry_run:
-                    def fn(body, descr, dump, path, out_mode, *args):
+                    def fn(body, descr, dump, path, mode, *args):
                         tostderr(descr + '\n')
 
                         return None
                 else:
-                    def fn(body, descr, dump, path, out_mode, *args):
+                    def fn(body, descr, dump, path, mode, *args):
                         tostderr(descr + '\n')
 
                         data = body(*args)
 
                         if dump:
-                            dump_data(data, buffer=path, out_mode=out_mode)
+                            dump_data(data, buffer=path, write_mode=mode)
 
                         return data
                     
@@ -869,7 +1134,7 @@ class MBType(object):
                 descr,
                 self.dump,
                 self.path,
-                self.out_mode,
+                mode,
                 *args
             )
 
@@ -900,8 +1165,8 @@ class MBType(object):
         build = force or (self.max_timestamp > self.timestamp)
 
         if build:
-            for s in self.prereqs:
-                garbage = garbage.union(s.get_garbage(force=force))
+            for s in self.pattern_prereqs() + self.other_prereqs():
+                garbage |= s.get_garbage(force=force)
 
             if self.intermediate and self.dump:
                 garbage.add(self.path)
@@ -909,31 +1174,54 @@ class MBType(object):
         return garbage
 
     def update_history(self):
-        for x in self.static_prereqs + self.prereqs:
+        for x in self.static_prereqs_src + self.pattern_prereqs() + self.other_prereqs():
             x.update_history()
-        if isinstance(self, ExternalResource) and self.rel_path_prev != self.rel_path_cur:
-            if not os.path.exists(HISTORY_PATH):
-                with open(HISTORY_PATH, 'w') as f:
-                    f.write('[settings]\n\n')
-            c = configparser.ConfigParser()
-            c.optionxform = str
-            c.read(HISTORY_PATH)
-            paths = c['settings']
-            paths[self.config_key()] = self.rel_path_cur
-            with open(HISTORY_PATH, 'w') as f:
-                c.write(f)
+        for k, _, v in self.config_values():
+            HISTORY_SETTINGS[k] = v
 
-    def add_prereqs(self, prereqs, static_prereqs=None):
-        self.prereqs_all_paths = prereqs
-        if static_prereqs is not None:
-            self.static_prereqs = static_prereqs
-        assert self.prereqs_all_paths is not None, 'No recipe to make %s' % self.path
+    def set_pattern_prereqs(self, prereqs):
+        self.pattern_prereqs_all_paths_src = prereqs
+
+        assert self.pattern_prereqs_all_paths_src is not None, 'No recipe to make %s' % self.path
         prereqs = []
-        for p in self.prereqs_all_paths:
+        for p in self.pattern_prereqs_all_paths_src:
+            candidates = list(p)
+            if len(candidates) > 0:
+                prereqs.append(candidates[0])
+            else:
+                prereqs.append(None)
+
+        self.pattern_prereqs_src = prereqs
+
+    def set_static_prereqs(self, prereqs):
+        self.static_prereqs_src = prereqs
+        assert self.static_prereqs_src is not None, 'No recipe to make %s' % self.path
+
+    def set_other_prereqs(self, prereqs):
+        self.other_prereqs_all_paths_src = prereqs
+
+        assert self.other_prereqs_all_paths_src is not None, 'No recipe to make %s' % self.path
+        prereqs = []
+        for p in self.other_prereqs_all_paths_src:
             candidates = list(p)
             prereqs.append(candidates[0])
 
-        self.prereqs = prereqs
+        self.other_prereqs_src = prereqs
+
+    def set_dump(self):
+        dump = False
+        if isinstance(self.body(), str):  # is a shell command and needs to be dumped
+            dump = True
+            self.dump = dump
+        if dump:
+            for p in self.pattern_prereqs_all_paths_src:
+                for q in p:
+                    q.dump = True
+            for q in self.static_prereqs_src:
+                q.dump = True
+            for p in self.other_prereqs_all_paths_src:
+                for q in p:
+                    q.dump = True
 
     def exists(self):
         return self.data.data is not None
@@ -944,8 +1232,8 @@ class MBType(object):
         if build:
             if self.dump and len(self.directory) > 0 and not os.path.exists(self.directory):
                 out.add(self.directory)
-            for p in self.prereqs:
-                out = out.union(p.directories_to_make(force=force))
+            for p in self.pattern_prereqs():
+                out |= p.directories_to_make(force=force)
         return out
 
 
@@ -968,7 +1256,7 @@ class StaticResource(MBType):
         return path, path, path
 
     @classmethod
-    def abstract(cls):
+    def is_abstract(cls):
         return cls.__name__ == 'StaticResource'
 
     @classmethod
@@ -1011,20 +1299,9 @@ class ExternalResource(StaticResource):
 
         return out
 
-    @property
-    def max_timestamp(self):
-        if self.rel_path_cur != self.rel_path_prev:
-            max_timestamp = np.inf
-        else:
-            max_timestamp = self.timestamp
-        for s in self.prereqs + self.static_prereqs:
-            max_timestamp = max(max_timestamp, s.max_timestamp)
-
-        return max_timestamp
-
     @classmethod
     def default_location(cls):
-        return os.path.normpath(DEFAULTS.get(cls.config_key(), cls.DEFAULT_LOCATION))
+        return os.path.normpath(DEFAULT_SETTINGS.get(cls.__name__ + '_path', cls.DEFAULT_LOCATION))
 
     @classmethod
     def url(cls):
@@ -1035,37 +1312,22 @@ class ExternalResource(StaticResource):
         return cls.PARENT_RESOURCE
 
     @classmethod
-    def config_key(cls):
-        return cls.__name__
+    def config_keys(cls):
+        out = [(cls.__name__ + '_path', cls.default_location())]
+        for x in cls.CONFIG_KEYS:
+            try:
+                key, default = x
+            except TypeError:
+                key = x
+                default = None
+            out.append((key, default))
+        return out
 
     @classmethod
     def infer_paths(cls):
         path = ''
-        rel_path_prev = None
-        rel_path_cur = None
 
-        if os.path.exists(HISTORY_PATH):
-            hist = configparser.ConfigParser()
-            hist.optionxform = str
-            hist.read(HISTORY_PATH)
-
-            paths = hist['settings']
-            rel_path_prev = paths.get(cls.config_key(), None)
-            if rel_path_prev is not None:
-                rel_path_prev = os.path.normpath(rel_path_prev)
-
-        if os.path.exists(CONFIG_PATH):
-            cur = configparser.ConfigParser()
-            cur.optionxform = str
-            cur.read(CONFIG_PATH)
-
-            paths = cur['settings']
-            rel_path_cur = paths.get(cls.config_key(), None)
-            if rel_path_cur is not None:
-                rel_path_cur = os.path.normpath(rel_path_cur)
-
-        if rel_path_cur is None:
-            rel_path_cur = os.path.normpath(cls.default_location())
+        _, rel_path_prev, rel_path_cur = cls.config_values()[0]
 
         if cls.parent_resource() is not None:
             path = os.path.join(path, cls.parent_resource().infer_paths()[0])
@@ -1084,7 +1346,7 @@ class ExternalResource(StaticResource):
         return os.path.exists(c.infer_paths()[0])
 
     @classmethod
-    def abstract(cls):
+    def is_abstract(cls):
         return cls.__name__ == 'ExternalResource'
 
     def build(self):
@@ -1092,8 +1354,28 @@ class ExternalResource(StaticResource):
             super(ExternalResource, self).build()
 
 
+class MBFailure(MBType):
+    DESCR_SHORT = 'failed target'
+    DESCR_LONG = (
+        "Class to represent build failures.\n"
+    )
+
+    def __init__(self, path, cls):
+        super(MBFailure, self).__init__(path)
+        self.cls = cls
+
+    def cls_suffix(self):
+        return self.cls.suffix()
+
+    def cls_manip(self):
+        return self.cls.manip()
+
+
+
+
 # Infer classes from MB static resources
 static_classes = create_classes_from_dir(STATIC_RESOURCES_DIR)
 for c in static_classes:
     globals()[c.__name__] = c
 del static_classes
+
