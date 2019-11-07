@@ -103,7 +103,7 @@ class Evalb(MBType):
 
 class Indent(MBType):
     MANIP = 'indent'
-    STATIC_PREREQ_TYPES = [Rvtl, SrcIndent]
+    STATIC_PREREQ_TYPES = [SrcRvtl, SrcIndent]
     CONFIG_KEYS = [('cflags', '-DNDEBUG -O3')]
     FILE_TYPE = None
 
