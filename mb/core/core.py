@@ -13,7 +13,7 @@ if sys.version_info[0] == 2:
 else:
     import configparser
 
-from mbbuild.util.general import tostderr
+from mb.util.general import tostderr
 
 
 #####################################

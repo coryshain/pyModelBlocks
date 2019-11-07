@@ -1,8 +1,8 @@
-from mbbuild.core.tables import *
-from mbbuild.util.toks2sents import toks2sents
-from mbbuild.util.sents2sentids import sents2sentids
-from mbbuild.util.tabular import rt2timestamps
-from mbbuild.util.util_natstor import ns_text_normalizer, ns_docid_int2name, docids_by_item, textgrid2itemmeasures, ns_merge
+from mb.core.tables import *
+from mb.util.toks2sents import toks2sents
+from mb.util.sents2sentids import sents2sentids
+from mb.util.tabular import rt2timestamps
+from mb.util.util_natstor import ns_text_normalizer, ns_docid_int2name, docids_by_item, textgrid2itemmeasures, ns_merge
 
 
 #####################################

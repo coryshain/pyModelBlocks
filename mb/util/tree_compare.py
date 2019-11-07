@@ -1,4 +1,4 @@
-from mbbuild.util import tree
+from mb.util import tree
 
 def compare_trees(fG, fH):
     output = []

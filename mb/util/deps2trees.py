@@ -1,5 +1,5 @@
 import re
-from mbbuild.util import tree
+from mb.util import tree
 
 
 def deps2trees(buffer, format='stanford', debug=False):

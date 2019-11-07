@@ -1,4 +1,4 @@
-from mbbuild.core.tables import *
+from mb.core.tables import *
 
 
 

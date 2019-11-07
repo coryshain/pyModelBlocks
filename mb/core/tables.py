@@ -1,5 +1,5 @@
 from .text import *
-from mbbuild.util.tabular import roll_toks, augment_cols, merge_tables, censor, partition
+from mb.util.tabular import roll_toks, augment_cols, merge_tables, censor, partition
 
 
 #####################################
@@ -82,7 +82,7 @@ class TokMeasuresDLT(TokMeasures):
     DESCR_LONG = 'Compute DLT (integration cost) measures from linetrees'
 
     def body(self):
-        out = "cat %s | python3 -m mbbuild.static_resources.scripts.dlt > %s" % (
+        out = "cat %s | python3 -m mb.static_resources.scripts.dlt > %s" % (
             self.pattern_prereqs()[0].path,
             self.path
         )

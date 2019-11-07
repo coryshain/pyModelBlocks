@@ -1,4 +1,4 @@
-from mbbuild.util import pcfg_model
+from mb.util import pcfg_model
 
 
 def rules2headmodel(buffer):

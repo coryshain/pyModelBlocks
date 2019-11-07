@@ -1,4 +1,4 @@
-from mbbuild.core.text import *
+from mb.core.text import *
 
 
 def create_classes_from_ptb_dir(directory, name='WSJ'):

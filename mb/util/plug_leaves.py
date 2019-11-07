@@ -1,4 +1,4 @@
-from mbbuild.util import tree
+from mb.util import tree
 
 def plug_words(t, words):
     for x in t.ch:

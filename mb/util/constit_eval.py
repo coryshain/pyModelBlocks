@@ -1,5 +1,5 @@
 import re, math
-from mbbuild.util import tree
+from mb.util import tree
 
 # Extension of tree.Tree() to provide useful character-level functionality
 # that permits evaluation and comparison of trees even when their word

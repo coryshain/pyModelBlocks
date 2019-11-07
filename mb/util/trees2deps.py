@@ -1,5 +1,5 @@
-from mbbuild.util import tree
-from mbbuild.util import pcfg_model
+from mb.util import tree
+from mb.util import pcfg_model
 
 
 def trees2deps(trees_buffer, model_buffer, debug=False):

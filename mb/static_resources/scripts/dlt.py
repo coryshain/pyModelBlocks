@@ -1,5 +1,5 @@
 import re, os, sys, argparse
-from mbbuild.util import tree
+from mb.util import tree
 
 argparser = argparse.ArgumentParser(description='''
 Calculates Dependency Locality Theory integration cost values by word (along with some other useful fields).

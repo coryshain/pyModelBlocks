@@ -1,11 +1,11 @@
 from .core import *
-from mbbuild.util import tree
-from mbbuild.util.deps2trees import deps2trees
-from mbbuild.util.rules2headmodel import rules2headmodel
-from mbbuild.util.trees2deps import trees2deps
-from mbbuild.util.tree_compare import compare_trees
-from mbbuild.util.constit_eval import constit_eval
-from mbbuild.util.plug_leaves import plug_leaves
+from mb.util import tree
+from mb.util.deps2trees import deps2trees
+from mb.util.rules2headmodel import rules2headmodel
+from mb.util.trees2deps import trees2deps
+from mb.util.tree_compare import compare_trees
+from mb.util.constit_eval import constit_eval
+from mb.util.plug_leaves import plug_leaves
 
 
 #####################################
