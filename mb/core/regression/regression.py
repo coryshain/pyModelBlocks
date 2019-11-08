@@ -77,7 +77,7 @@ class Regression(MBType):
     PRECIOUS = True
     REGRESSION_TYPE = ''
     DESCR_SHORT = 'regression'
-    DESCR_LONG = "Abstract base class for regression types\n"
+    DESCR_LONG = "Abstract base class for regression types"
 
     @classmethod
     def is_abstract(cls):
@@ -195,7 +195,7 @@ class Prediction(MBType):
     FILE_TYPE = 'table'
     REGRESSION_TYPE = ''
     DESCR_SHORT = 'prediction'
-    DESCR_LONG = "Abstract base class for prediction types\n"
+    DESCR_LONG = "Abstract base class for prediction types"
 
     @classmethod
     def is_abstract(cls):
@@ -333,7 +333,7 @@ class Signif(MBType):
     ]
     SIGNIF_TYPE = ''
     DESCR_SHORT = 'significance report'
-    DESCR_LONG = "Abstract base class for significance report from model comparison\n"
+    DESCR_LONG = "Abstract base class for significance report from model comparison"
 
     @classmethod
     def is_abstract(cls):
@@ -433,3 +433,45 @@ class Signif(MBType):
         )
 
         return out
+
+
+
+
+
+#####################################
+#
+# SIGNIF EXECUTABLE TYPES
+#
+#####################################
+
+
+class SignifExecutablePT(SignifExecutable):
+    MANIP = 'signif-pt'
+    STATIC_PREREQ_TYPES = [ScriptsSignifpt_sh, ScriptsSignif_py]
+    DESCR_SHORT = 'PT prediction executable'
+    DESCR_LONG = "Exectuable for prediction from a linear mixed-effects (LMER) regression model"
+
+    def body(self):
+        out = 'cp %s %s' % (
+            self.static_prereqs()[0].path,
+            self.path
+        )
+
+        return out
+
+
+
+
+
+#####################################
+#
+# SIGNIF TYPES
+#
+#####################################
+
+
+class SignifLRT(Signif):
+    PATTERN_PREREQ_TYPES = [Prediction]
+    SIGNIF_TYPE = 'pt'
+    DESCR_SHORT = 'PT signif'
+    DESCR_LONG = "Permutation test (PT).\n"
