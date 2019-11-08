@@ -308,7 +308,7 @@ class MBType(object):
         self.static_prereqs_src = []
         self.other_prereqs_all_paths_src = []
         self.other_prereqs_src = []
-        self.dependencies = []
+        self.dependents = set()
 
         self.has_prefix_src = False
         self.has_suffix_src = False
@@ -322,30 +322,8 @@ class MBType(object):
 
         self.fn_dry_run = None
         self.fn = None
-        self.built = False
+        self.finished = False
         self.process_scheduler = None
-
-    @property
-    def args(self):
-        args = self.parse_path(self.path, has_prefix=self.has_prefix, has_suffix=self.has_suffix)
-
-        if args is not None:
-            if 'basename' in args:
-                del args['basename']
-            if 'prereqs' in args:
-                del args['prereqs']
-            if 'static_prereqs' in args:
-                del args['static_prereqs']
-
-        return args
-
-    @property
-    def has_prefix(self):
-        return self.has_prefix_src
-
-    @property
-    def has_suffix(self):
-        return self.has_suffix_src
 
     @property
     def timestamp(self):
@@ -368,13 +346,30 @@ class MBType(object):
         return max_timestamp
 
     @property
-    def output_buffer(self):
-        if self.dump:
-            out = self.path
-        else:
-            out = None
+    def graph_key(self):
+        return type(self), self.path, self.has_prefix, self.has_suffix
 
-        return out
+    @property
+    def has_prefix(self):
+        return self.has_prefix_src
+
+    @property
+    def has_suffix(self):
+        return self.has_suffix_src
+
+    @property
+    def args(self):
+        args = self.parse_path(self.path, has_prefix=self.has_prefix, has_suffix=self.has_suffix)
+
+        if args is not None:
+            if 'basename' in args:
+                del args['basename']
+            if 'prereqs' in args:
+                del args['prereqs']
+            if 'static_prereqs' in args:
+                del args['static_prereqs']
+
+        return args
 
     @property
     def concurrent(self):
@@ -728,8 +723,8 @@ class MBType(object):
     def body(self):
         raise NotImplementedError
 
-    def body_args(self, dry_run=False):
-        out = self.pattern_prereq_data(dry_run=dry_run) + self.other_prereq_data(dry_run=dry_run)
+    def body_args(self):
+        out = self.pattern_prereqs() + self.other_prereqs()
         args = self.args
         for a in self.arg_types():
             out.append(args[a.key])
@@ -737,20 +732,41 @@ class MBType(object):
 
         return out
 
-    def pattern_prereq_data(self, dry_run=False):
-        return [x.get(dry_run=dry_run) for x in self.pattern_prereqs()]
-
-    def static_prereq_data(self, dry_run=False):
-        return [x.get(dry_run=dry_run) for x in self.static_prereqs()]
-
-    def other_prereq_data(self, dry_run=False):
-        return [x.get(dry_run=dry_run) for x in self.other_prereqs()]
-
-    def get(self, dry_run=False, force=False, report_up_to_date=False):
+    def get_garbage(self, force=False):
+        garbage = set()
         build = force or (self.max_timestamp > self.timestamp)
-        if build and not self.built:
+
+        if build:
+            for s in self.pattern_prereqs() + self.other_prereqs():
+                garbage |= s.get_garbage(force=force)
+
+            if self.intermediate and self.dump and not self.precious():
+                garbage.add(self.path)
+
+        return garbage
+
+    def get_stale_nodes(self, force=False):
+        stale_nodes = set()
+        if force or (self.max_timestamp > self.timestamp):
+            stale_nodes.add(self.graph_key)
+            for p in self.pattern_prereqs() + self.static_prereqs() + self.other_prereqs():
+                stale_nodes |= p.get_stale_nodes(force=force)
+    
+        return stale_nodes
+
+    def get(self, dry_run=False, stale_nodes=None, report_up_to_date=False):
+        if stale_nodes is None:
+            stale_nodes = set()
+
+        if self.graph_key in stale_nodes and not self.finished:
             body = self.body()
-            args = self.body_args(dry_run=dry_run)
+            args = []
+            for x in self.body_args():
+                if issubclass(type(x), MBType):
+                    args.append(x.get(dry_run=dry_run, stale_nodes=stale_nodes))
+                else:
+                    args.append(x)
+
             if not dry_run:
                 self.set_data()
 
@@ -820,7 +836,7 @@ class MBType(object):
 
             self.set_data(data)
 
-            self.built = True
+            self.finished = True
         else:
             if dry_run:
                 def fn(path, data, report_up_to_date=False):
@@ -845,19 +861,6 @@ class MBType(object):
 
         return data
 
-    def get_garbage(self, force=False):
-        garbage = set()
-        build = force or (self.max_timestamp > self.timestamp)
-
-        if build:
-            for s in self.pattern_prereqs() + self.other_prereqs():
-                garbage |= s.get_garbage(force=force)
-
-            if self.intermediate and self.dump and not self.precious():
-                garbage.add(self.path)
-
-        return garbage
-
     def update_history(self):
         for x in self.static_prereqs_src + self.pattern_prereqs() + self.other_prereqs():
             x.update_history()
@@ -871,6 +874,12 @@ class MBType(object):
         prereqs = []
         if self.pattern_prereqs_all_paths_src is not None:
             for p in self.pattern_prereqs_all_paths_src:
+                # Update dependents
+                for _p in p:
+                    if issubclass(_p.__class__, MBType):
+                        _p.dependents.add(self)
+
+                # Select winning candidate
                 candidates = sorted(list(p), key=cmp_to_key(prereq_comparator))
                 if len(candidates) > 0:
                     prereqs.append(candidates[0])
@@ -881,7 +890,12 @@ class MBType(object):
 
     def set_static_prereqs(self, prereqs):
         self.static_prereqs_src = prereqs
-        # assert self.static_prereqs_src is not None, 'No recipe to make %s' % self.path
+        if self.static_prereqs_src is not None:
+            for p in self.pattern_prereqs_all_paths_src:
+                # Update dependents
+                for _p in p:
+                    if issubclass(_p.__class__, MBType):
+                        _p.dependents.add(self)
 
     def set_other_prereqs(self, prereqs):
         self.other_prereqs_all_paths_src = prereqs
@@ -890,6 +904,12 @@ class MBType(object):
         prereqs = []
         if self.other_prereqs_all_paths_src is not None:
             for p in self.other_prereqs_all_paths_src:
+                # Update dependents
+                for _p in p:
+                    if issubclass(_p.__class__, MBType):
+                        _p.dependents.add(self)
+                    
+                # Select winning candidate
                 candidates = sorted(list(p), key=cmp_to_key(prereq_comparator))
                 prereqs.append(candidates[0])
 
@@ -1038,8 +1058,8 @@ class ExternalResource(StaticResource):
     def is_abstract(cls):
         return cls.__name__ == 'ExternalResource'
 
-    def body_args(self, dry_run=False):
-        out = self.static_prereq_data(dry_run=dry_run)
+    def body_args(self):
+        out = self.static_prereqs()
 
         return out
 
@@ -1230,8 +1250,6 @@ class Graph(object):
         return self.process_scheduler is not None
 
     def build(self, targets):
-        tostderr('Building dependency graph...\n')
-
         if self.target_paths is None:
             self.target_paths = []
         if targets is not None:
@@ -1296,12 +1314,12 @@ class Graph(object):
                                     p = c()
                                 else:
                                     p = c(target_path)
-                                self.add_node(p)
                                 p.set_pattern_prereqs(pat)
                                 p.set_static_prereqs(stat)
                                 p.set_other_prereqs(oth)
                                 p.has_prefix_src = has_prefix_cur
                                 p.has_suffix_src = has_suffix_cur
+                                self.add_node(p)
                             p.dump = True
                             p.set_dump()
                             p.intermediate = False
@@ -1373,10 +1391,10 @@ class Graph(object):
                 p = self[(c, prereq_path, False, False)]
                 if p is None:
                     p = c()
-                    self.add_node(p)
                     p.set_pattern_prereqs(pat)
                     p.set_static_prereqs(stat)
                     p.set_other_prereqs(oth)
+                    self.add_node(p)
                 static_prereqs.append(p)
             static_prereqs = static_prereqs
 
@@ -1429,12 +1447,12 @@ class Graph(object):
                                                 p = c()
                                             else:
                                                 p = c(prereq_path)
-                                            self.add_node(p)
                                             p.set_pattern_prereqs(pat)
                                             p.set_static_prereqs(stat)
                                             p.set_other_prereqs(oth)
                                             p.has_prefix_src = has_prefix_cur
                                             p.has_suffix_src = has_suffix_cur
+                                            self.add_node(p)
                                         p.set_dump()
                                         successes.add(p)
                                     elif match_cur:
@@ -1505,12 +1523,12 @@ class Graph(object):
                                                 p = c()
                                             else:
                                                 p = c(prereq_path)
-                                            self.add_node(p)
                                             p.set_pattern_prereqs(pat)
                                             p.set_static_prereqs(stat)
                                             p.set_other_prereqs(oth)
                                             p.has_prefix_src = has_prefix_cur
                                             p.has_suffix_src = has_suffix_cur
+                                            self.add_node(p)
                                         p.set_dump()
                                         successes.add(p)
                                     elif match_cur:
@@ -1566,8 +1584,8 @@ class Graph(object):
         }
 
     def add_node(self, node):
-        assert not (type(node), node.path) in self.nodes, 'Attempted to re-insert an existing key: %s' % str((type(node), node.path))
-        k = (type(node), node.path, node.has_prefix, node.has_suffix)
+        k = node.graph_key
+        assert not k in self.nodes, 'Attempted to re-insert an existing key: %s' % str(k)
         v = node
         self[k] = v
         node.graph = self
@@ -1664,6 +1682,94 @@ class Graph(object):
 
         return out
 
+    def get_stale_nodes(self, force=False, downstream=False):
+        stale_nodes = set()
+        for t in self.targets:
+            stale_nodes |= t.get_stale_nodes(force=force)
+
+        if downstream:
+            downstream_stale_nodes = set()
+
+            for k in stale_nodes:
+                if not k in downstream_stale_nodes:
+                    downstream_stale_nodes |= self.get_downstream_stale_nodes(self[k])
+
+            stale_nodes |= downstream_stale_nodes
+
+        return stale_nodes
+
+    def get_downstream_stale_nodes(self, node, stale_nodes=None):
+        if stale_nodes is None:
+            stale_nodes = set()
+        key = node.graph_key
+        if key in self:
+            stale_nodes.add(key)
+        for d in node.dependents:
+            stale_nodes |= self.get_downstream_stale_nodes(d, stale_nodes=stale_nodes)
+
+        return stale_nodes
+
+    def topological_sort_stale_node(self, stale_nodes):
+        out = []
+        while len(stale_nodes) > 0:
+            out_cur = []
+            for n in list(stale_nodes):
+                source = True
+                node = self[n]
+                if node is None:
+                    print(n)
+                    for x in sorted(list(self.nodes), key=lambda x:x[1]):
+                        print('  ' + str(x))
+                    input()
+                for p in node.pattern_prereqs() + node.static_prereqs() + node.other_prereqs():
+                    if p.graph_key in stale_nodes:
+                        source = False
+                        break
+                if source:
+                    out_cur.append(n)
+                    stale_nodes.remove(n)
+            out_cur = sorted(out_cur, key=lambda x: x[1])
+            out += out_cur
+
+        return out
+
+
+    def get_build_plan(self, directories_to_make, stale_nodes, garbage, indent=0):
+        out = ' ' * indent + 'Build plan:\n'
+
+        out_directories = ''
+        if len(directories_to_make) > 0:
+            out_directories += ' ' * (indent + 2) + 'Create directories:\n'
+            for d in directories_to_make:
+                out_directories += ' ' * (indent + 4) + '%s\n' % d
+            out_directories += '\n'
+
+        out_stale = ''
+        if len(stale_nodes) > 0:
+            out_stale += ' ' * (indent + 2) + 'Compute targets:\n'
+            sorted_nodes = self.topological_sort_stale_node(stale_nodes.copy())
+            for n in sorted_nodes:
+                out_stale += ' ' * (indent + 4) + '%s\n' % n[1]
+            out_stale += '\n'
+
+        out_garbage = ''
+        if len(garbage) > 0:
+            out_garbage += ' ' * (indent + 2) + 'Clean up targets:\n'
+            for g in sorted(list(garbage)):
+                out_garbage += ' ' * (indent + 4) + '%s\n' % g
+            out_garbage += '\n'
+
+        if out_directories or out_stale or out_garbage:
+            out += out_directories
+            out += out_stale
+            out += out_garbage
+        else:
+            out += ' ' * (indent + 2) + 'Nothing to do here!\n'
+
+        out += '\n'
+
+        return out
+
     def get_garbage(self, force=False):
         garbage = set()
         for t in self.targets:
@@ -1677,7 +1783,10 @@ class Graph(object):
         with open(HISTORY_PATH, 'w') as f:
             HISTORY.write(f)
 
-    def get(self, dry_run=False, force=False):
+    def get(self, dry_run=False, force=False, downstream=True, interactive=False):
+        # Compute set of stale nodes
+        stale_nodes = self.get_stale_nodes(force=force, downstream=downstream)
+
         # Compute set of directories to make
         directories_to_make = set()
         for t in self.targets:
@@ -1687,85 +1796,108 @@ class Graph(object):
         # Compute list of garbage to collect
         garbage = sorted(list(self.get_garbage(force=force)))
 
-        # Run targets
-        tostderr('Running data...\n')
-        try:
-            if len(directories_to_make) > 0:
-                tostderr('Making directories:\n')
-                for d in directories_to_make:
-                    tostderr('  %s\n' % d)
-                    if not dry_run:
-                        os.makedirs(d)
+        if interactive:
+            tostderr(self.get_build_plan(
+                directories_to_make,
+                stale_nodes,
+                garbage
+            ))
 
-            out = [x.get(dry_run=dry_run, force=force, report_up_to_date=True) for x in self.targets]
+            cont = None
+            while cont is None or (not (not cont.strip() or cont.strip().lower() == 'y') and not cont.strip().lower() == 'n'):
+                cont = input('Continue? [y]/n > ')
 
-            # Update history (links to external resources)
-            if not dry_run:
-                self.update_history()
+            if cont.strip().lower() != 'n':
+                cont = True
+            else:
+                cont = False
 
-            if self.concurrent:
-                out = self.process_scheduler.get(out)
-        except BaseException as e:
-            out = None
-            tostderr('\n\nModelBlocks runtime error:\n')
-            tostderr(str(e) + '\n\n\n')
-            for x in self.targets:
-                x.intermediate = True
-                x.PRECIOUS = False
-
-        # Clean up intermediate targets
-        if len(garbage) > 0:
-            tostderr('Garbage collecting intermediate files:\n')
-            for p in garbage:
-                p_str = '  %s' % p
-                if os.path.isdir(p):
-                    p_str += ' (entire directory)\n'
-                    if dry_run or not os.path.exists(p):
-                        rm = lambda x: x
-                    else:
-                        rm = shutil.rmtree
-                else:
-                    p_str += '\n'
-                    if dry_run or not os.path.exists(p):
-                        rm = lambda x: x
-                    else:
-                        rm = os.remove
-                tostderr(p_str)
-                rm(p)
-                # Remove any side effects
-                if os.path.exists(p + DELIM[0] + 'summary'):
-                    if dry_run or not os.path.exists(p):
-                        rm = lambda x: x
-                    else:
-                        rm = os.remove
-                    tostderr('  ' + p + DELIM[0] + 'summary\n')
-                    rm(p + DELIM[0] + 'summary')
-                if os.path.exists(p + DELIM[0] + 'log'):
-                    if dry_run or not os.path.exists(p):
-                        rm = lambda x: x
-                    else:
-                        rm = os.remove
-                    tostderr('  ' + p + DELIM[0] + 'log\n')
-                    rm(p + DELIM[0] + 'log')
-                    
             tostderr('\n')
+        else:
+            cont = True
 
-        garbage_directories = set()
-        for d in directories_to_make:
-            if os.path.exists(d) and not len(os.listdir(d)):
-                garbage_directories.add(d)
-        garbage_directories = sorted(list(garbage_directories))
+        if cont:
+            # Run targets
+            try:
+                if len(directories_to_make) > 0:
+                    tostderr('Making directories:\n')
+                    for d in directories_to_make:
+                        tostderr('  %s\n' % d)
+                        if not dry_run:
+                            os.makedirs(d)
 
-        if len(garbage_directories) > 0:
-            tostderr('Garbage collecting intermediate directories:\n')
-            for d in garbage_directories:
-                d_str = '  %s\n' % d
-                if dry_run or not os.path.exists(d):
-                    rm = lambda x: x
-                else:
-                    rm = os.rmdir
-                tostderr(d_str)
-                rm(d)
+                out = [x.get(dry_run=dry_run, stale_nodes=stale_nodes, report_up_to_date=True) for x in self.targets]
+
+                # Update history (links to external resources)
+                if not dry_run:
+                    self.update_history()
+
+                if self.concurrent:
+                    out = self.process_scheduler.get(out)
+            except BaseException as e:
+                out = None
+                tostderr('\n\nModelBlocks runtime error:\n')
+                tostderr(str(e) + '\n\n\n')
+                for x in self.targets:
+                    x.intermediate = True
+                    x.PRECIOUS = False
+
+            # Clean up intermediate targets
+            if len(garbage) > 0:
+                tostderr('Garbage collecting intermediate files:\n')
+                for p in garbage:
+                    p_str = '  %s' % p
+                    if os.path.isdir(p):
+                        p_str += ' (entire directory)\n'
+                        if dry_run or not os.path.exists(p):
+                            rm = lambda x: x
+                        else:
+                            rm = shutil.rmtree
+                    else:
+                        p_str += '\n'
+                        if dry_run or not os.path.exists(p):
+                            rm = lambda x: x
+                        else:
+                            rm = os.remove
+                    tostderr(p_str)
+                    rm(p)
+                    # Remove any side effects
+                    if os.path.exists(p + DELIM[0] + 'summary'):
+                        if dry_run or not os.path.exists(p):
+                            rm = lambda x: x
+                        else:
+                            rm = os.remove
+                        tostderr('  ' + p + DELIM[0] + 'summary\n')
+                        rm(p + DELIM[0] + 'summary')
+                    if os.path.exists(p + DELIM[0] + 'log'):
+                        if dry_run or not os.path.exists(p):
+                            rm = lambda x: x
+                        else:
+                            rm = os.remove
+                        tostderr('  ' + p + DELIM[0] + 'log\n')
+                        rm(p + DELIM[0] + 'log')
+
+                tostderr('\n')
+
+            garbage_directories = set()
+            for d in directories_to_make:
+                if os.path.exists(d) and not len(os.listdir(d)):
+                    garbage_directories.add(d)
+            garbage_directories = sorted(list(garbage_directories))
+
+            if len(garbage_directories) > 0:
+                tostderr('Garbage collecting intermediate directories:\n')
+                for d in garbage_directories:
+                    d_str = '  %s\n' % d
+                    if dry_run or not os.path.exists(d):
+                        rm = lambda x: x
+                    else:
+                        rm = os.rmdir
+                    tostderr(d_str)
+                    rm(d)
+
+        else:
+            out = None
 
         return out
 

@@ -193,6 +193,7 @@ class Prediction(MBType):
         ),
     ]
     FILE_TYPE = 'table'
+    PRECIOUS = True
     REGRESSION_TYPE = ''
     DESCR_SHORT = 'prediction'
     DESCR_LONG = "Abstract base class for prediction types"

@@ -179,8 +179,8 @@ class LineItemsNatstor(LineItems):
     DESCR = 'naturalstories lineitems'
     DESCR_LONG = 'Natural Stories lineitems'
     
-    def body_args(self, dry_run=False):
-        out = self.static_prereq_data(dry_run=dry_run) + self.other_prereq_data(dry_run=dry_run)
+    def body_args(self):
+        out = self.static_prereqs() + self.other_prereqs()
 
         return out
     
@@ -213,8 +213,8 @@ class ItemMeasuresNatstor(ItemMeasures):
     DESCR = 'naturalstories itemmeasures'
     DESCR_LONG = 'Natural Stories base itemmeasures'
 
-    def body_args(self, dry_run=False):
-        out = self.static_prereq_data(dry_run=dry_run) + self.other_prereq_data(dry_run=dry_run)
+    def body_args(self):
+        out = self.static_prereqs() + self.other_prereqs()
 
         return out
 
@@ -263,8 +263,8 @@ class ItemMeasuresNatstorMergeFields(ItemMeasures):
     DESCR = 'naturalstories merge fields'
     DESCR_LONG = 'Natural Stories itemmeasures augmented with fields needed to merge with experimental measures (evmeasures)'
 
-    def body_args(self, dry_run=False):
-        out = self.static_prereq_data(dry_run=dry_run) + self.other_prereq_data(dry_run=dry_run)
+    def body_args(self):
+        out = self.static_prereqs() + self.other_prereqs()
 
         return out
 
@@ -302,8 +302,8 @@ class EvMeasuresNatStor(EvMeasures):
     DESCR = 'naturalstories base evmeasures'
     DESCR_LONG = 'Natural Stories base evmesaures'
 
-    def body_args(self, dry_run=False):
-        out = self.static_prereq_data(dry_run=dry_run) + self.other_prereq_data(dry_run=dry_run)
+    def body_args(self):
+        out = self.static_prereqs() + self.other_prereqs()
 
         return out
 
