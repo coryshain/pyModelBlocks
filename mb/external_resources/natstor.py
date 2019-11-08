@@ -51,7 +51,7 @@ class NatstorTokSource(ExternalResource):
 
 class NatstorProcessRTs(ExternalResource):
     DEFAULT_LOCATION = 'naturalstories_RTS/process_ns_mb.R'
-    STATIC_PREREQ_TYPES = [NatstorRepo, ScriptsProcess_ns_mb]
+    STATIC_PREREQ_TYPES = [NatstorRepo, ScriptsProcess_ns_mb_R]
     PARENT_RESOURCE = NatstorRepo
     FILE_TYPE = None
     DESCR_SHORT = 'RT processing script'
@@ -106,8 +106,8 @@ class NatstorAudioSource(ExternalResource):
 
 
 class LineTreesNatstorPTB(LineTrees):
-    MANIP = 'naturalstories.penn'
-    STATIC_PREREQ_TYPES = [LineTreesNatstorPennSource, ScriptsEditabletrees2linetrees]
+    MANIP = 'naturalstories.ptb'
+    STATIC_PREREQ_TYPES = [LineTreesNatstorPennSource, ScriptsEditabletrees2linetrees_pl]
     DESCR_SHORT = 'naturalstories gold ptb linetrees'
     DESCR_LONG = (
         "Hand-annotated parse trees for the Natural Stories corpus.\n"
@@ -160,10 +160,17 @@ class LineToksNatstor(LineToks):
 
     @classmethod
     def other_prereq_paths(self, path):
+        if path is None:
+            return ['(DIR/)naturalstories.ptb.linetrees']
+
         directory = os.path.dirname(path)
-        filename = 'naturalstories.penn.linetrees'
+        filename = 'naturalstories.ptb.linetrees'
 
         return [os.path.join(directory, filename)]
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return LineTreesNatstorPTB
 
 
 class LineItemsNatstor(LineItems):
@@ -195,6 +202,10 @@ class LineItemsNatstor(LineItems):
             return ['(DIR/)naturalstories.linetoks']
         return [os.path.join(os.path.dirname(path), 'naturalstories.linetoks')]
 
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return LineToksNatstor
+
 
 class ItemMeasuresNatstor(ItemMeasures):
     MANIP = 'naturalstories'
@@ -220,6 +231,10 @@ class ItemMeasuresNatstor(ItemMeasures):
         if path is None:
             return ['(DIR/)naturalstories.lineitems']
         return [os.path.join(os.path.dirname(path), 'naturalstories.lineitems')]
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return LineItemsNatstor
 
 
 class ItemMeasuresNatstorTime(ItemMeasures):
@@ -276,6 +291,10 @@ class ItemMeasuresNatstorMergeFields(ItemMeasures):
             return ['(DIR/)naturalstories.lineitems']
         return [os.path.join(os.path.dirname(path), 'naturalstories.lineitems')]
 
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return LineItemsNatstor
+
 
 class EvMeasuresNatStor(EvMeasures):
     MANIP = 'naturalstories'
@@ -309,5 +328,9 @@ class EvMeasuresNatStor(EvMeasures):
         if path is None:
             return ['(DIR/)naturalstories.mfields.lineitems']
         return [os.path.join(os.path.dirname(path), 'naturalstories.mfields.itemmeasures')]
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return ItemMeasuresNatstorMergeFields
 
 

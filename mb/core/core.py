@@ -106,9 +106,9 @@ def create_classes_from_dir(directory, parent_name=''):
         if not static_file == '__init__.py':
             parent_name = normalize_class_name(parent_name)
             path = os.path.join(directory, static_file)
-            static_file_parts = static_file.split('.')
+            static_file_parts = static_file.split(DELIM[0])
             if len(static_file_parts) > 1:
-                descr = ''.join(static_file_parts[:-1])
+                descr = ''.join(static_file_parts[:-1]) + '_' + static_file_parts[-1]
             else:
                 descr = static_file_parts[0]
             class_name = normalize_class_name(descr)
@@ -258,6 +258,9 @@ def prereq_comparator(x, y):
 
     return out
 
+def other_prereq_type_err_msg(i, j):
+    return 'Index %d must be < the number of other prereqs (%d)' % (i, j)
+
 
 
 
@@ -359,6 +362,9 @@ class MBType(object):
             for s in self.pattern_prereqs_src + self.static_prereqs_src + self.other_prereqs_src:
                 max_timestamp = max(max_timestamp, s.max_timestamp)
 
+        # if max_timestamp > self.timestamp:
+        #     max_timestamp = np.inf
+
         return max_timestamp
 
     @property
@@ -401,6 +407,18 @@ class MBType(object):
     @classmethod
     def other_prereq_paths(cls, path):
         return []
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return MBType
+
+    @classmethod
+    def other_prereq_types(cls, paths=None):
+        out = []
+        for i, path in enumerate(paths):
+            out.append(cls.other_prereq_type(i, path))
+            
+        return out
 
     @classmethod
     def repeatable_prereq(cls):
@@ -664,8 +682,8 @@ class MBType(object):
             out = cls.infer_paths()[0]
         else:
             out = []
-            if cls.has_prefix():
-                out.append('<PREFIX>')
+            if cls.has_multiple_pattern_prereqs():
+                out.append('(<PREFIX>)')
             for i, x in enumerate(cls.pattern_prereq_types()):
                 name = x.__name__
                 if i == 0 and cls.repeatable_prereq():
@@ -673,8 +691,8 @@ class MBType(object):
                 else:
                     s = '<%s>' % name
                 out.append(s)
-            if cls.has_suffix():
-                out.append('<SUFFIX>')
+            if cls.has_multiple_pattern_prereqs():
+                out.append('(<SUFFIX>)')
             out = '(<DIR>/)' + DELIM[0].join(out)
             if len(cls.arg_types()) > 0:
                 out += DELIM[0]
@@ -1031,9 +1049,67 @@ class ExternalResource(StaticResource):
 
 #####################################
 #
-# CORE MB TYPES
+# GENERAL MB TYPES
 #
 #####################################
+
+
+class FoundFile(MBType):
+    DESCR_SHORT = 'found file'
+    DESCR_LONG = (
+        "Class to represent found files.\n"
+        "A found file cannot be built but exists at the specified path.\n"
+        "Found files are always treated as old.\n"
+        "They are also given lowest precedence for dependency path selection,\n"
+        "so targets will be rebuilt if they can be and are out of date."
+    )
+
+    @property
+    def max_timestamp(self):
+        return -np.inf
+
+
+class ParamFile(MBType):
+    SUFFIX = 'prm.ini'
+    PRECIOUS = True
+    DESCR_SHORT = 'param file'
+    DESCR_LONG = "File containing configuration parameters for building targets."
+
+    @classmethod
+    def match(cls, path):
+        return path.endswith(cls.suffix())
+
+    @classmethod
+    def parse_path(cls, path, has_prefix=False, has_suffix=False):
+        out = None
+        path = os.path.normpath(path)
+        if cls.match(path):
+            out = cls.parse_args(path)
+            out['prereqs'] = []
+            out['src'] = os.path.join(
+                ROOT_DIR,
+                'static_resources',
+                'prm',
+                os.path.basename(out['basename']) + cls.suffix()
+            )
+
+        return out
+    
+    @classmethod
+    def other_prereq_paths(cls, path):
+        if path is None:
+            return ['(DIR/)<NAME>%s<TYPE>prm%sini' % (DELIM[0], DELIM[0])]
+        out = [cls.parse_path(path)['src']]
+        
+        return out
+
+    def body(self):
+        out = 'cp %s %s' % (
+            self.other_prereqs()[0].path,
+            self.path
+        )
+        
+        return out
 
 
 class MBFailure(MBType):
@@ -1060,62 +1136,6 @@ class MBFailure(MBType):
 
     def cls_other_prereq_paths(self):
         return self.cls.cls_other_prereq_paths(self.path)
-
-
-class FoundFile(MBType):
-    DESCR_SHORT = 'found file'
-    DESCR_LONG = (
-        "Class to represent found files.\n"
-        "A found file cannot be built but exists at the specified path.\n"
-        "Found files are always treated as old.\n"
-        "They are also given lowest precedence for dependency path selection.\n"
-    )
-
-    @property
-    def max_timestamp(self):
-        return -np.inf
-
-
-class ParamFile(MBType):
-    SUFFIX = 'prm.ini'
-    DESCR_SHORT = 'param file'
-    DESCR_LONG = (
-        "File containing configuration parameters for building targets.\n"
-    )
-
-    @classmethod
-    def match(cls, path):
-        return path.endswith(cls.suffix())
-
-    @classmethod
-    def parse_path(cls, path, has_prefix=False, has_suffix=False):
-        out = None
-        path = os.path.normpath(path)
-        if cls.match(path):
-            out = cls.parse_args(path)
-            out['prereqs'] = []
-            out['src'] = os.path.join(
-                ROOT_DIR,
-                'static_resources',
-                'prm',
-                os.path.basename(out['basename']) + cls.suffix()
-            )
-
-        return out
-    
-    @classmethod
-    def other_prereq_paths(cls, path):
-        out = [cls.parse_path(path)['src']]
-        
-        return out
-
-    def body(self):
-        out = 'cp %s %s' % (
-            self.other_prereqs()[0].path,
-            self.path
-        )
-        
-        return out
         
     
     
@@ -1373,7 +1393,11 @@ class Graph(object):
                 for (P, prereq_path) in zip(pattern_prereq_types, parsed['prereqs']):
                     successes = SuccessSet()
                     failures = FailureSet()
-                    inheritors = (P.inheritors() | {P}) - {MBFailure, FoundFile}
+
+                    inheritors = P.inheritors()
+                    if not P.is_abstract():
+                        inheritors |= {P}
+                    inheritors -= {MBFailure, FoundFile}
 
                     if prereq_path not in downstream_paths:
                         for c in inheritors:
@@ -1440,12 +1464,16 @@ class Graph(object):
     
                 # OTHER PREREQS
                 other_prereq_paths = cls.other_prereq_paths(path)
+                other_prereq_types = cls.other_prereq_types(other_prereq_paths)
                 other_prereqs_all_paths = []
-                for prereq_path in other_prereq_paths:
+                for (P, prereq_path) in zip(other_prereq_types, other_prereq_paths):
                     prereq_path = os.path.normpath(prereq_path)
                     successes = SuccessSet()
                     failures = FailureSet()
-                    inheritors = MBType.inheritors() - {MBFailure, FoundFile}
+                    inheritors = P.inheritors()
+                    if not P.is_abstract():
+                        inheritors |= {P}
+                    inheritors -= {MBFailure, FoundFile}
 
                     if prereq_path not in downstream_paths:
                         for c in inheritors:
@@ -1650,51 +1678,78 @@ class Graph(object):
             HISTORY.write(f)
 
     def get(self, dry_run=False, force=False):
-        # Make any needed directories
+        # Compute set of directories to make
         directories_to_make = set()
         for t in self.targets:
             directories_to_make |= t.directories_to_make(force=force)
         directories_to_make = sorted(list(directories_to_make))
-        if len(directories_to_make) > 0:
-            tostderr('Making directories:\n')
-            for d in directories_to_make:
-                tostderr('  %s\n' % d)
-                if not dry_run:
-                    os.makedirs(d)
 
         # Compute list of garbage to collect
         garbage = sorted(list(self.get_garbage(force=force)))
 
         # Run targets
         tostderr('Running data...\n')
-        out = [x.get(dry_run=dry_run, force=force, report_up_to_date=True) for x in self.targets]
+        try:
+            if len(directories_to_make) > 0:
+                tostderr('Making directories:\n')
+                for d in directories_to_make:
+                    tostderr('  %s\n' % d)
+                    if not dry_run:
+                        os.makedirs(d)
 
-        # Update history (links to external resources)
-        if not dry_run:
-            self.update_history()
+            out = [x.get(dry_run=dry_run, force=force, report_up_to_date=True) for x in self.targets]
 
-        if self.concurrent:
-            out = self.process_scheduler.get(out)
+            # Update history (links to external resources)
+            if not dry_run:
+                self.update_history()
+
+            if self.concurrent:
+                out = self.process_scheduler.get(out)
+        except BaseException as e:
+            out = None
+            tostderr('\n\nModelBlocks runtime error:\n')
+            tostderr(str(e) + '\n\n\n')
+            for x in self.targets:
+                x.intermediate = True
+                x.PRECIOUS = False
 
         # Clean up intermediate targets
         if len(garbage) > 0:
-            tostderr('Garbage collecting intermediate files and directories:\n')
+            tostderr('Garbage collecting intermediate files:\n')
             for p in garbage:
                 p_str = '  %s' % p
                 if os.path.isdir(p):
                     p_str += ' (entire directory)\n'
-                    if dry_run:
+                    if dry_run or not os.path.exists(p):
                         rm = lambda x: x
                     else:
                         rm = shutil.rmtree
                 else:
                     p_str += '\n'
-                    if dry_run:
+                    if dry_run or not os.path.exists(p):
                         rm = lambda x: x
                     else:
                         rm = os.remove
                 tostderr(p_str)
                 rm(p)
+            tostderr('\n')
+
+        garbage_directories = set()
+        for d in directories_to_make:
+            if os.path.exists(d) and not len(os.listdir(d)):
+                garbage_directories.add(d)
+        garbage_directories = sorted(list(garbage_directories))
+
+        if len(garbage_directories) > 0:
+            tostderr('Garbage collecting intermediate directories:\n')
+            for d in garbage_directories:
+                d_str = '  %s\n' % d
+                if dry_run or not os.path.exists(d):
+                    rm = lambda x: x
+                else:
+                    rm = os.rmdir
+                tostderr(d_str)
+                rm(d)
 
         return out
 

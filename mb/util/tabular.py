@@ -212,10 +212,12 @@ def censor(df, config_path=None):
         censorship_params = {}
         for c in censor:
             censorship_params[c] = [x.strip() for x in censor[c].strip().split(',')]
+        if len(censorship_params) == 0:
+            censorship_params = None
 
-    select = compute_filters(df, censorship_params)
-
-    df = df[select]
+    if censorship_params is not None:
+        select = compute_filters(df, censorship_params)
+        df = df[select]
 
     return df
 
@@ -284,12 +286,12 @@ def partition(df, config_path, partition):
     elif arity == 2:
         names = ['fit', 'held']
     else:
-        names = [str(x) for x in range(arity)]
+        names = [str(x) for x in range(1, arity + 1)]
 
     select_new = None
     for name in partition:
         try:
-            i = int(name)
+            i = int(name) - 1
         except:
             i = names.index(name)
         if select_new is None:

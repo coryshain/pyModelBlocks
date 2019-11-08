@@ -1,8 +1,6 @@
 from mb.core.tables import *
 
 
-
-
 #####################################
 #
 # ABSTRACT TYPES
@@ -10,10 +8,58 @@ from mb.core.tables import *
 #####################################
 
 
+class RegressionExecutable(MBType):
+    PRECIOUS = True
+    DESCR_SHORT = 'regression executable'
+    DESCR_LONG = "Abstract base class for regression executables\n"
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'RegressionExecutable'
+
+
+class PredictionExecutable(MBType):
+    PRECIOUS = True
+    DESCR_SHORT = 'prediction executable'
+    DESCR_LONG = "Abstract base class for prediction executables\n"
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'PredictionExecutable'
+
+
+class SignifExecutable(MBType):
+    PRECIOUS = True
+    DESCR_SHORT = 'signif test executable'
+    DESCR_LONG = "Abstract base class for significance testing executables\n"
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'SignifExecutable'
+
+
 class Regression(MBType):
-    SUFFIX = '.regression'
+    SUFFIX = DELIM[0] + 'reg'
     PATTERN_PREREQ_TYPES = [EvMeasures]
     ARG_TYPES = [
+        Arg(
+            'cens_params_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing censorship instructions.'
+        ),
+        Arg(
+            'part_params_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing partitioning instructions.'
+        ),
+        Arg(
+            'train_partition_name',
+            dtype=str,
+            positional=True,
+            descr='Name of partition element to use for training. One of ["fit", "expl", "held"].'
+        ),
         Arg(
             'model_config_file',
             dtype=str,
@@ -25,24 +71,6 @@ class Regression(MBType):
             dtype=str,
             positional=True,
             descr='Underscore-delimited list of predictors to add to baseline formula defined in the model config.'
-        ),
-        Arg(
-            'partition_params_file',
-            dtype=str,
-            positional=True,
-            descr='Basename of *.ini file in local directory ``prm`` providing partitioning instructions.'
-        ),
-        Arg(
-            'partition_name',
-            dtype=str,
-            positional=True,
-            descr='Name of partition element to use. One of ["fit", "expl", "held"].'
-        ),
-        Arg(
-            'c',
-            dtype=str,
-            positional=False,
-            descr='Basename of *.ini file in local directory ``prm`` providing censorship instructions.'
         )
     ]
     FILE_TYPE = None
@@ -56,21 +84,34 @@ class Regression(MBType):
         return cls.__name__ == 'Regression'
 
     @classmethod
+    def regression_type(cls):
+        return cls.REGRESSION_TYPE
+
+    @classmethod
+    def manip(cls):
+        return DELIM[1] + cls.regression_type()
+
+    @classmethod
     def other_prereq_paths(cls, path):
         if path is None:
-            return []
+            return [
+                'bin/regress-%s' % cls.regression_type(),
+                '(DIR/)<RESMEASURES>.resmeasures'
+                'prm/<NAME>.regprm.ini'
+            ]
 
         args = cls.parse_args(path)
 
         directory = os.path.dirname(path)
-        resmeasures = os.path.basename(path).split('.')[0]
-        resmeasures += '.%s-%s' % (args['partition_params_file'], args['partition_name'])
-
-        c = args['c']
-        if c is not None:
-            resmeasures += '-c%s' % c
-
-        resmeasures += '.resmeasures'
+        resmeasures = os.path.basename(path).split(DELIM[0])[0]
+        resmeasures += DELIM[0] + \
+                       DELIM[1].join((
+                           args['cens_params_file'],
+                           args['part_params_file'],
+                           args['train_partition_name']
+                       )) + \
+                       DELIM[0] + \
+                       'resmeasures'
 
         out = [
             'bin/regress-%s' % cls.regression_type(),
@@ -81,8 +122,14 @@ class Regression(MBType):
         return out
 
     @classmethod
-    def regression_type(cls):
-        return cls.REGRESSION_TYPE
+    def other_prereq_type(cls, i, path):
+        if i == 0:
+            return RegressionExecutable
+        if i == 1:
+            return ResMeasures
+        if i == 2:
+            return ParamFile
+        raise TypeError(other_prereq_type_err_msg(i, 3))
 
     def body(self):
         preds = self.args['predictors'].split(DELIM[2])
@@ -90,12 +137,146 @@ class Regression(MBType):
         evmeasures = self.pattern_prereqs()[0]
         executable, resmeasures, config = self.other_prereqs()
 
-        out = '%s %s %s %s %s  >  %s  2>  %s.log' % (
+        out = '%s %s %s %s %s %s  >  %s  2>  %s' % (
             executable.path,
             evmeasures.path,
             resmeasures.path,
             config.path,
+            self.path,
             ' '.join(preds),
+            '%s%ssummary' % (self.path, DELIM[0]),
+            '%s%slog' % (self.path, DELIM[0])
+        )
+
+        return out
+
+
+class Prediction(MBType):
+    SUFFIX = DELIM[0] + 'pred'
+    PATTERN_PREREQ_TYPES = [Regression]
+    ARG_TYPES = [
+        Arg(
+            'cens_params_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing censorship instructions.'
+        ),
+        Arg(
+            'part_params_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing partitioning instructions.'
+        ),
+        Arg(
+            'train_partition_name',
+            dtype=str,
+            positional=True,
+            descr='Name of partition element to use for training. One of ["fit", "expl", "held"].'
+        ),
+        Arg(
+            'model_config_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing model configuration instructions.'
+        ),
+        Arg(
+            'predictors',
+            dtype=str,
+            positional=True,
+            descr='Underscore-delimited list of predictors to add to baseline formula defined in the model config.'
+        ),
+        Arg(
+            'eval_partition_name',
+            dtype=str,
+            positional=True,
+            descr='Name of partition element to use for evaluation. One of ["fit", "expl", "held"].'
+        ),
+    ]
+    FILE_TYPE = 'table'
+    REGRESSION_TYPE = ''
+    DESCR_SHORT = 'prediction'
+    DESCR_LONG = "Abstract base class for prediction types\n"
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'Prediction'
+
+    @classmethod
+    def regression_type(cls):
+        return cls.REGRESSION_TYPE
+
+    @classmethod
+    def manip(cls):
+        return DELIM[1] + cls.regression_type()
+
+    @classmethod
+    def augment_prereq(cls, i, path):
+        args = cls.parse_args(path)
+        out = DELIM[0] + \
+              DELIM[1].join((
+                  args['cens_params_file'],
+                  args['part_params_file'],
+                  args['train_partition_name'],
+                  args['model_config_file'],
+                  args['predictors']
+              )) + \
+              DELIM[1] + \
+              cls.regression_type()
+
+        return out
+
+    @classmethod
+    def other_prereq_paths(cls, path):
+        if path is None:
+            return [
+                'bin/predict-%s' % cls.regression_type(),
+                '(DIR/)<EVMEASURES>.evmeasures'
+                '(DIR/)<RESMEASURES>.resmeasures'
+            ]
+
+        args = cls.parse_args(path)
+
+        directory = os.path.dirname(path)
+
+        evmeasures = args['basename'] + DELIM[0] + 'evmeasures'
+
+        resmeasures = os.path.basename(path).split(DELIM[0])[0]
+        resmeasures += DELIM[0] + \
+                       DELIM[1].join((
+                           args['cens_params_file'],
+                           args['part_params_file'],
+                           args['eval_partition_name']
+                       )) + \
+                       DELIM[0] + \
+                       'resmeasures'
+
+        out = [
+            'bin/predict-%s' % cls.regression_type(),
+            evmeasures,
+            os.path.join(directory, resmeasures)
+        ]
+
+        return out
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        if i == 0:
+            return PredictionExecutable
+        if i == 1:
+            return EvMeasures
+        if i == 2:
+            return ResMeasures
+        raise TypeError(other_prereq_type_err_msg(i, 3))
+
+    def body(self):
+        reg = self.pattern_prereqs()[0]
+        executable, evmeasures, resmeasures = self.other_prereqs()
+
+        out = '%s %s %s %s  >  %s  2>  %s.log' % (
+            executable.path,
+            reg.path,
+            evmeasures.path,
+            resmeasures.path,
             self.path,
             self.path
         )
@@ -103,27 +284,153 @@ class Regression(MBType):
         return out
 
 
-class Regress(MBType):
-    DESCR_SHORT = 'regression executable'
-    DESCR_LONG = "Abstract base class for regression executables\n"
+class Signif(MBType):
+    SUFFIX = DELIM[0] + 'signif'
+    PATTERN_PREREQ_TYPES = [Prediction]
+    ARG_TYPES = [
+        Arg(
+            'cens_params_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing censorship instructions.'
+        ),
+        Arg(
+            'part_params_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing partitioning instructions.'
+        ),
+        Arg(
+            'train_partition_name',
+            dtype=str,
+            positional=True,
+            descr='Name of partition element to use for training. One of ["fit", "expl", "held"].'
+        ),
+        Arg(
+            'model_config_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing model configuration instructions.'
+        ),
+        Arg(
+            'predictors',
+            dtype=str,
+            positional=True,
+            descr='Underscore-delimited list of predictors to add to baseline formula defined in the model config.'
+        ),
+        Arg(
+            'eval_partition_name',
+            dtype=str,
+            positional=True,
+            descr='Name of partition element to use for evaluation. One of ["fit", "expl", "held"].'
+        ),
+        Arg(
+            'regression_type',
+            dtype=str,
+            positional=True,
+            descr='Type of regression model to evaluate.'
+        ),
+    ]
+    SIGNIF_TYPE = ''
+    DESCR_SHORT = 'significance report'
+    DESCR_LONG = "Abstract base class for significance report from model comparison\n"
 
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'Signif'
 
+    @classmethod
+    def signif_type(cls):
+        return cls.SIGNIF_TYPE
 
+    @classmethod
+    def manip(cls):
+        return DELIM[1] + cls.signif_type()
 
-#####################################
-#
-# REGRESSION TYPES
-#
-#####################################
+    @classmethod
+    def augment_prereq(cls, i, path):
+        args = cls.parse_args(path)
+        out = DELIM[0] + DELIM[1].join((
+            args['cens_params_file'],
+            args['part_params_file'],
+            args['train_partition_name'],
+            args['model_config_file'],
+            args['predictors'],
+            args['eval_partition_name'],
+            args['regression_type']
+        ))
 
+        return out
 
-class LMER(Regression):
-    MANIP = '-lmer'
-    REGRESSION_TYPE = 'lmer'
-    STATIC_PREREQ_TYPES = [ScriptsLmertools, ScriptsRegresslmer]
-    DESCR_SHORT = 'LMER regression'
-    DESCR_LONG = "Run linear mixed-effects (LMER) regression\n"
+    @classmethod
+    def other_prereq_paths(cls, path):
+        if path is None:
+            return [
+                'bin/signif-%s' % cls.signif_type(),
+                '(DIR/)<RESMEASURES>.resmeasures'
+                'prm/<NAME>.regprm.ini'
+            ]
 
+        def powerset(iterable):
+            xs = list(iterable)
+            return itertools.chain.from_iterable(itertools.combinations(xs, n) for n in range(len(xs) + 1))
+
+        args = cls.parse_args(path)
+
+        template = ''.join((
+            args['basename'],
+            DELIM[0],
+            DELIM[1].join((
+                args['cens_params_file'],
+                args['part_params_file'],
+                args['train_partition_name'],
+                args['model_config_file'],
+                '%s',
+                args['eval_partition_name'],
+                args['regression_type']
+            )),
+            DELIM[0],
+            'pred'
+        ))
+
+        preds = args['predictors'].split(DELIM[2])
+        pset = powerset(preds)
+
+        out = []
+
+        for s in pset:
+            out_cur = []
+            for p in preds:
+                if p not in s:
+                    out_cur.append('~%s' % p)
+                else:
+                    out_cur.append('%s' % p)
+            out_cur = '_'.join(out_cur)
+            if '~' in out_cur:
+                out.append(template % out_cur)
+
+        out = ['bin/signif-%s' % cls.signif_type()] + out
+
+        return out
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        if i == 0:
+            return SignifExecutable
+        else:
+            return Prediction
+
+    def body(self):
+        other_prereqs = self.other_prereqs()
+        executable = other_prereqs[0]
+        preds = other_prereqs[1:] + self.pattern_prereqs()
+
+        out = '%s %s' % (
+            executable.path,
+            ' '.join([x.path for x in preds])
+        )
+
+        return out
 
 
 
@@ -136,13 +443,11 @@ class LMER(Regression):
 #####################################
 
 
-
-
-class RegressLMER(Regress):
+class RegressionExecutableLMER(RegressionExecutable):
     MANIP = 'regress-lmer'
-    STATIC_PREREQ_TYPES = [ScriptsRegresslmer]
-    DESCR_SHORT = 'LMER executable'
-    DESCR_LONG = "Exectuable for running a linear mixed-effects (LMER) regression\n"
+    STATIC_PREREQ_TYPES = [ScriptsRegresslmer_sh, ScriptsLmertools_R, ScriptsRegresslmer_R]
+    DESCR_SHORT = 'LMER regression executable'
+    DESCR_LONG = "Exectuable for fitting a linear mixed-effects (LMER) regression model\n"
 
     def body(self):
         out = 'cp %s %s' % (
@@ -151,3 +456,105 @@ class RegressLMER(Regress):
         )
 
         return out
+
+
+
+
+
+#####################################
+#
+# PREDICTION EXECUTABLE TYPES
+#
+#####################################
+
+
+class PredictionExecutableLMER(PredictionExecutable):
+    MANIP = 'predict-lmer'
+    STATIC_PREREQ_TYPES = [ScriptsPredictlmer_sh, ScriptsLmertools_R, ScriptsPredictlmer_R]
+    DESCR_SHORT = 'LMER prediction executable'
+    DESCR_LONG = "Exectuable for prediction from a linear mixed-effects (LMER) regression model\n"
+
+    def body(self):
+        out = 'cp %s %s' % (
+            self.static_prereqs()[0].path,
+            self.path
+        )
+
+        return out
+
+
+
+
+
+#####################################
+#
+# PREDICTION EXECUTABLE TYPES
+#
+#####################################
+
+
+class SignifExecutableLRT(SignifExecutable):
+    MANIP = 'signif-lrt'
+    STATIC_PREREQ_TYPES = [ScriptsSigniflrt_sh, ScriptsLmertools_R, ScriptsSigniflrt_R, ScriptsSigniflrt_py]
+    DESCR_SHORT = 'LMER prediction executable'
+    DESCR_LONG = "Exectuable for prediction from a linear mixed-effects (LMER) regression model\n"
+
+    def body(self):
+        out = 'cp %s %s' % (
+            self.static_prereqs()[0].path,
+            self.path
+        )
+
+        return out
+
+
+
+
+
+#####################################
+#
+# REGRESSION TYPES
+#
+#####################################
+
+
+class RegressionLMER(Regression):
+    REGRESSION_TYPE = 'lmer'
+    DESCR_SHORT = 'LMER regression'
+    DESCR_LONG = "Run linear mixed-effects (LMER) regression\n"
+
+
+
+
+
+#####################################
+#
+# PREDICTION TYPES
+#
+#####################################
+
+
+class PredictionLMER(Prediction):
+    REGRESSION_TYPE = 'lmer'
+    DESCR_SHORT = 'LMER prediction'
+    DESCR_LONG = "Predict from linear mixed-effects (LMER) regression\n"
+
+
+
+
+
+#####################################
+#
+# SIGNIF TYPES
+#
+#####################################
+
+
+class SignifLRT(Signif):
+    PATTERN_PREREQ_TYPES = [PredictionLMER]
+    SIGNIF_TYPE = 'lrt'
+    DESCR_SHORT = 'LRT signif'
+    DESCR_LONG = "Likelihood ratio significance test(s). Only available for LMER models.\n"
+
+
+

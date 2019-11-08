@@ -1,16 +1,19 @@
 from mb.core.text import *
 
 
+#####################################
+#
+# UTILITY FUNCTIONS
+#
+#####################################
+
+
 def create_classes_from_ptb_dir(directory, name='WSJ'):
     out = []
     for sect in sorted(os.listdir(directory)):
         DEFAULT_LOCATION = os.path.join(directory, sect)
         descr = '%s section %s (source)' % (name, sect)
         src_class_name = '%sSection%sSrc' % (name, sect)
-        def section(cls):
-            return cls.SECTION
-        def corpus(cls):
-            return cls.CORPUS
 
         attr_dict = {
             'PARENT_RESOURCE': PennTreebankRepo,
@@ -19,12 +22,8 @@ def create_classes_from_ptb_dir(directory, name='WSJ'):
             'SECTION': sect,
             'DESCR_SHORT': descr,
             'DESCR_LONG': descr,
-            'corpus': corpus,
-            'section': section
         }
-        new_class = type(src_class_name, (ExternalResource,), attr_dict)
-        new_class.section = classmethod(section)
-        new_class.corpus = classmethod(corpus)
+        new_class = type(src_class_name, (PTBSection,), attr_dict)
         globals()[src_class_name] = new_class
 
         descr = '%s section %s' % (name, sect)
@@ -40,22 +39,72 @@ def create_classes_from_ptb_dir(directory, name='WSJ'):
 
         attr_dict = {
             'MANIP': MANIP,
-            'STATIC_PREREQ_TYPES': [globals()[src_class_name], ScriptsEditabletrees2linetrees],
+            'STATIC_PREREQ_TYPES': [globals()[src_class_name], ScriptsEditabletrees2linetrees_pl],
             'CORPUS': name.lower(),
             'SECTION': sect,
             'DESCR_SHORT': descr,
             'DESCR_LONG': descr,
             'body': body,
-            'corpus': corpus,
-            'section': section
         }
-        new_class = type(class_name, (LineTrees,), attr_dict)
-        new_class.section = classmethod(section)
-        new_class.corpus = classmethod(corpus)
+        new_class = type(class_name, (LineTreesPTB,), attr_dict)
         out.append(new_class)
         globals()[class_name] = new_class
 
     return out
+
+
+
+
+
+#####################################
+#
+# ABSTRACT CLASSES
+#
+#####################################
+
+
+class PTBSection(ExternalResource):
+    CORPUS = ''
+    SECTION = ''
+
+    @classmethod
+    def corpus(cls):
+        return cls.CORPUS
+
+    @classmethod
+    def section(cls):
+        return cls.SECTION
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'PTBSection'
+
+
+class LineTreesPTB(LineTrees):
+    CORPUS = ''
+    SECTION = ''
+
+    @classmethod
+    def corpus(cls):
+        return cls.CORPUS
+
+    @classmethod
+    def section(cls):
+        return cls.SECTION
+
+    @classmethod
+    def is_abstract(cls):
+        return cls.__name__ == 'PTBSection'
+
+
+
+
+
+#####################################
+#
+# EXTERNAL RESOURCES
+#
+#####################################
 
 
 class PennTreebankRepo(ExternalResource):
@@ -106,6 +155,16 @@ BROWN_SECTIONS = create_classes_from_ptb_dir(
     name='Brown'
 )
 
+
+
+
+
+
+#####################################
+#
+# CONCATENATED PTB TREES
+#
+#####################################
 
 class PTBSections(LineTrees):
     DESCR_SHORT = 'Concatenated PTB sections'
@@ -168,6 +227,10 @@ class PTBSections(LineTrees):
             paths = [os.path.join(dirname, s.corpus() + s.section() + s.suffix()) for s in sects]
 
         return paths
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return LineTreesPTB
 
     @classmethod
     def syntax_str(cls):

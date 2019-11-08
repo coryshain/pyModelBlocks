@@ -42,9 +42,9 @@ colnames(y_hat) = c('y_hat')
 err = y-y_hat
 colnames(err) = c('err')
 ae = abs(err)
-colnames(ae) = c('ae')
+colnames(ae) = c('mae')
 se = err^2
-colnames(se) = c('se')
+colnames(se) = c('mse')
 # write.table(cbind(y,y_hat,err,ae,se), file=outfile, quote=FALSE, row.names=FALSE)
 write.table(se, file=stdout(), quote=FALSE, col.names=FALSE, row.names=FALSE)
 

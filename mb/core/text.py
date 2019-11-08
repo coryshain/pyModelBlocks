@@ -94,7 +94,7 @@ class TokDeps(MBType):
 
 class Evalb(MBType):
     MANIP = 'evalb'
-    STATIC_PREREQ_TYPES = [SrcEvalb]
+    STATIC_PREREQ_TYPES = [SrcEvalb_c]
     FILE_TYPE = None
 
     def body(self):
@@ -103,7 +103,7 @@ class Evalb(MBType):
 
 class Indent(MBType):
     MANIP = 'indent'
-    STATIC_PREREQ_TYPES = [SrcRvtl, SrcIndent]
+    STATIC_PREREQ_TYPES = [SrcRvtl, SrcIndent_cpp]
     CONFIG_KEYS = [('cflags', '-DNDEBUG -O3')]
     FILE_TYPE = None
 
@@ -130,7 +130,7 @@ class Indent(MBType):
 
 class LineTreesFromEditableTrees(LineTrees):
     PATTERN_PREREQ_TYPES = [EditableTrees]
-    STATIC_PREREQ_TYPES = [ScriptsEditabletrees2linetrees]
+    STATIC_PREREQ_TYPES = [ScriptsEditabletrees2linetrees_pl]
     DESCR_SHORT = 'linetrees from editabletrees'
     DESCR_LONG = "Convert editabletrees into linetrees.\n"
 
@@ -295,7 +295,7 @@ class LineTreesMaxWords(LineTrees):
 class LineTreesNoUnary(LineTrees):
     MANIP = '.nounary'
     PATTERN_PREREQ_TYPES = [LineTrees]
-    STATIC_PREREQ_TYPES = [ScriptsMaketreesnounary]
+    STATIC_PREREQ_TYPES = [ScriptsMaketreesnounary_pl]
     DESCR_SHORT = 'no-unary linetrees'
     DESCR_LONG = "Collapse unary CFG expansions.\n"
 
@@ -454,8 +454,8 @@ class LineTreesFromDeps(LineTrees):
     PATTERN_PREREQ_TYPES = [TokDeps]
     DESCR_SHORT = 'linetrees from dependencies'
     DESCR_LONG = (
-        "Convert dependencies to linetrees using the Collins et al. (1999) algorithm.\n",
-        "Resultant trees are as flat as possible (i.e. as agnostic as possible about",
+        "Convert dependencies to linetrees using the Collins et al. (1999) algorithm.\n"
+        "Resultant trees are as flat as possible (i.e. as agnostic as possible about"
         "internal structure when heads have multiple dependents)."
     )
 
@@ -527,6 +527,9 @@ class EditableTreesFromLineTrees(EditableTrees):
     def other_prereq_paths(cls, path):
         return ['bin/indent']
 
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return Indent
 
     def body(self):
         out = "cat %s | %s  >  %s" % (
@@ -541,7 +544,7 @@ class EditableTreesFromLineTrees(EditableTrees):
 class EditableTreesNumbered(EditableTrees):
     MANIP = '.numbered'
     PATTERN_PREREQ_TYPES = [EditableTrees]
-    STATIC_PREREQ_TYPES = [ScriptsMaketreesnumbered]
+    STATIC_PREREQ_TYPES = [ScriptsMaketreesnumbered_pl]
     DESCR_SHORT = 'numbered editabletrees'
     DESCR_LONG = "Add line numbers to editable trees.\n"
 
@@ -626,7 +629,7 @@ class LineToksReversed(LineToks):
 
 class RulesFromLineTrees(Rules):
     PATTERN_PREREQ_TYPES = [LineTrees]
-    STATIC_PREREQ_TYPES = [ScriptsTrees2rules]
+    STATIC_PREREQ_TYPES = [ScriptsTrees2rules_pl]
     DESCR_SHORT = 'rules from linetrees'
     DESCR_LONG = 'Convert linetrees into table of CFG rules'
 
@@ -697,7 +700,7 @@ class ModelHead(Model):
 class Syneval(MBType):
     SUFFIX = '.syneval'
     PATTERN_PREREQ_TYPES = [LineTrees, LineTrees]
-    STATIC_PREREQ_TYPES = [PrmEvalb]
+    STATIC_PREREQ_TYPES = [PrmEvalb_prm]
     DESCR_SHORT = 'syneval'
     DESCR_LONG = "Evaluate one syntactic annotation (parse) against another.\n"
 
@@ -717,6 +720,20 @@ class Syneval(MBType):
     @classmethod
     def other_prereq_paths(cls, path):
         return ['bin/evalb']
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return Evalb
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        if i == 0:
+            return RegressionExecutable
+        if i == 1:
+            return ResMeasures
+        if i == 2:
+            return ParamFile
+        raise TypeError(other_prereq_type_err_msg(i, 3))
 
 
 class SynevalErrors(MBType):
@@ -762,7 +779,7 @@ class ConstitEvalSuffix(ConstitEval):
 class BootstrapSignif(MBType):
     SUFFIX = '.bootstrapsignif'
     PATTERN_PREREQ_TYPES = [Syneval, Syneval]
-    STATIC_PREREQ_TYPES = [ScriptsCompare]
+    STATIC_PREREQ_TYPES = [ScriptsCompare_pl]
     DESCR_SHORT = 'syneval signif test'
     DESCR_LONG = "Statistically compare difference between two synevals by bootstrap test.\n"
 
@@ -811,6 +828,10 @@ class TokDepsFromLineTrees(TokDeps):
             return ['(DIR/)<CORPUS>.head.model']
         return [cls.strip_suffix(path) + '.head.model']
 
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return ModelHead
+
 
 
 
@@ -844,3 +865,7 @@ class GoldLineTrees(LineTrees):
         out = [os.path.join(dirname, basename + '.stripped.linetrees')]
 
         return out
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return StaticResource

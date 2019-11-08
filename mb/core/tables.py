@@ -77,9 +77,13 @@ class ResMeasures(MBType):
 class TokMeasuresDLT(TokMeasures):
     MANIP = '.dlt'
     PATTERN_PREREQ_TYPES = [GoldLineTrees]
-    STATIC_PREREQ_TYPES = [ScriptsDlt]
+    STATIC_PREREQ_TYPES = [ScriptsDlt_py]
     DESCR = 'DLT measures'
     DESCR_LONG = 'Compute DLT (integration cost) measures from linetrees'
+
+    @classmethod
+    def augment_prereq(cls, i, path):
+        return '.gold'
 
     def body(self):
         out = "cat %s | python3 -m mb.static_resources.scripts.dlt > %s" % (
@@ -88,10 +92,6 @@ class TokMeasuresDLT(TokMeasures):
         )
 
         return out
-
-    @classmethod
-    def augment_prereq(cls, i, path):
-        return '.gold'
 
 
 
@@ -109,20 +109,24 @@ class ItemmeasuresRolled(ItemMeasures):
     DESCR_SHORT = 'rolled itemmeasures'
     DESCR_LONG = 'Itemmeasures rolled from tokmeasures'
 
-    def body(self):
-        def out(tokmeasures, lineitems):
-            outputs = roll_toks(tokmeasures, lineitems, skip_cols=['sentid', 'embddepthMin', 'timestamp'])
-
-            return outputs
-
-        return out
-
     @classmethod
     def other_prereq_paths(cls, path):
         if path is None:
             return ['(DIR/)<LINEITEMS>.lineitems']
         basename = '.'.join(path.split('.')[:-2])
         out = [basename + '.itemmeasures']
+
+        return out
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return ItemMeasures
+
+    def body(self):
+        def out(tokmeasures, lineitems):
+            outputs = roll_toks(tokmeasures, lineitems, skip_cols=['sentid', 'embddepthMin', 'timestamp'])
+
+            return outputs
 
         return out
 
@@ -198,12 +202,9 @@ class EvMeasuresMerged(EvMeasures):
     DESCR_SHORT = 'merged evmeasures'
     DESCR_LONG = 'Merge of evmeasures with itemmeasures'
 
-    def body(self):
-        def out(itemmeasures, evmeasures):
-            outputs = merge_tables(evmeasures, itemmeasures, ['sentid', 'sentpos'])
-            return outputs
-
-        return out
+    @classmethod
+    def augment_prereq(cls, i, path):
+        return '.concat'
 
     @classmethod
     def other_prereq_paths(cls, path):
@@ -215,8 +216,17 @@ class EvMeasuresMerged(EvMeasures):
         return out
 
     @classmethod
-    def augment_prereq(cls, i, path):
-        return '.concat'
+    def other_prereq_type(cls, i, path):
+        return EvMeasures
+
+    def body(self):
+        def out(itemmeasures, evmeasures):
+            itemmeasures = itemmeasures.copy()
+            evmeasures = evmeasures.copy()
+            outputs = merge_tables(evmeasures, itemmeasures, ['sentid', 'sentpos'])
+            return outputs
+
+        return out
 
 
 
@@ -242,7 +252,13 @@ class ResMeasuresReg(ResMeasures):
     PATTERN_PREREQ_TYPES = [EvMeasures]
     ARG_TYPES = [
         Arg(
-            'partition_params_file',
+            'cens_params_file',
+            dtype=str,
+            positional=True,
+            descr='Basename of *.ini file in local directory ``prm`` providing censorship instructions.'
+        ),
+        Arg(
+            'part_params_file',
             dtype=str,
             positional=True,
             descr='Basename of *.ini file in local directory ``prm`` providing partitioning instructions.'
@@ -252,34 +268,9 @@ class ResMeasuresReg(ResMeasures):
             dtype=str,
             positional=True,
             descr='Name of partition element to use. One of ["fit", "expl", "held"].'
-        ),
-        Arg(
-            'c',
-            dtype=str,
-            positional=False,
-            descr='Basename of *.ini file in local directory ``prm`` providing censorship instructions.'
         )
     ]
     DESCR_LONG = 'resmeasures for regression analysis'
-
-    def body(self):
-        def out(*args):
-            evmeasures = args[0].copy()
-            other_prereqs = self.other_prereqs()
-            part_params_file = other_prereqs[0].path
-            if len(other_prereqs) > 1:
-                cens_params_file = other_prereqs[1].path
-            else:
-                cens_params_file = None
-
-            part_name = self.args['partition_name']
-
-            evmeasures = censor(evmeasures, cens_params_file)
-            evmeasures = partition(evmeasures, part_params_file, part_name)
-
-            return evmeasures
-
-        return out
 
     @classmethod
     def other_prereq_paths(cls, path):
@@ -289,11 +280,28 @@ class ResMeasuresReg(ResMeasures):
         out = []
         args = cls.parse_args(path)
 
-        out.append('prm/%s.partprm.ini' % args['partition_params_file'])
+        out.append('prm/%s.partprm.ini' % args['part_params_file'])
+        out.append('prm/%s.censprm.ini' % args['cens_params_file'])
 
-        c = args['c']
-        if c is not None:
-            out.append('prm/%s.censprm.ini' % c)
+        return out
+
+    @classmethod
+    def other_prereq_type(cls, i, path):
+        return ParamFile
+
+    def body(self):
+        def out(*args):
+            evmeasures = args[0].copy()
+            other_prereqs = self.other_prereqs()
+            part_params_file = other_prereqs[0].path
+            cens_params_file = other_prereqs[1].path
+
+            part_name = self.args['partition_name'].split(DELIM[2])
+
+            evmeasures = censor(evmeasures, cens_params_file)
+            evmeasures = partition(evmeasures, part_params_file, part_name)
+
+            return evmeasures
 
         return out
 
