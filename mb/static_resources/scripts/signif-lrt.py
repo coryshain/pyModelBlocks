@@ -39,9 +39,13 @@ paths = sorted(sys.argv[1:], key=len, reverse=True)
 models = []
 
 for path in paths:
-    m = '.'.join(path.split('.')[:-2]) + '.reg'
-    fit_part = path.split('.')[-3].split('_')[0]
-    eval_part = path.split('.')[-2].split('_')[0]
+    path_chunks = path.split('.')
+    args = path_chunks[-2].split('-')
+    args = [x for i, x in enumerate(args) if i != 5]
+    m = '.'.join(path_chunks[:-2] + ['-'.join(args), 'reg'])
+    args = path.split('.')[-2].split('-')
+    fit_part = args[2]
+    eval_part = args[5]
     assert fit_part == eval_part, 'Likelihood ratio testing is in-sample and requires matched training and evaluation partitions. Saw "%s", "%s"' % (fit_part, eval_part)
     models.append(m)
 

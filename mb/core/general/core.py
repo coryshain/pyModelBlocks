@@ -22,7 +22,7 @@ from mb.util.general import tostderr
 #
 #####################################
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 STATIC_RESOURCES_DIR = os.path.join(ROOT_DIR, 'static_resources')
 DEFAULT_PATH = os.path.join(ROOT_DIR, 'config', '.defaults.ini')
 CONFIG_PATH = os.path.join(ROOT_DIR, 'config', '.config.ini')
@@ -1732,6 +1732,22 @@ class Graph(object):
                         rm = os.remove
                 tostderr(p_str)
                 rm(p)
+                # Remove any side effects
+                if os.path.exists(p + DELIM[0] + 'summary'):
+                    if dry_run or not os.path.exists(p):
+                        rm = lambda x: x
+                    else:
+                        rm = os.remove
+                    tostderr('  ' + p + DELIM[0] + 'summary\n')
+                    rm(p + DELIM[0] + 'summary')
+                if os.path.exists(p + DELIM[0] + 'log'):
+                    if dry_run or not os.path.exists(p):
+                        rm = lambda x: x
+                    else:
+                        rm = os.remove
+                    tostderr('  ' + p + DELIM[0] + 'log\n')
+                    rm(p + DELIM[0] + 'log')
+                    
             tostderr('\n')
 
         garbage_directories = set()

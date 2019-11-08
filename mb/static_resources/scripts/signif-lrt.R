@@ -33,20 +33,6 @@ corpus <- base$corpus
 mainfile <- load(args[2])
 main <- get(mainfile)
 
-if ('-p' %in% args) {
-    ix = match('-p', args) + 1
-    if (args[ix] == 'train') {
-        permutation_test_data='train'
-    } else if(args[ix] == 'dev') {
-        permutation_test_data='dev'
-    } else if(args[ix] == 'test') {
-        permutation_test_data='test'
-    } else {
-        stop('Permutation test requested on invalid partition name')
-    }
-} else {
-    permutation_test_data=NULL
-}
 
 #########################
 #
@@ -54,14 +40,11 @@ if ('-p' %in% args) {
 #
 #########################
 
-printSignifSummary <- function(mainName, mainEffect, basemodel, testmodel, signif, base_diff=NULL, aov=NULL) {
+printSignifSummary <- function(mainName, mainEffect, basemodel, testmodel, signif, aov=NULL) {
     cat(paste0('Main effect: ', mainName), '\n')
     cat(paste0('Corpus: ', corpus), '\n')
     cat(paste0('Effect estimate (',mainEffect,'): ', summary(testmodel)[[10]][mainEffect,'Estimate'], sep=''), '\n')
     cat(paste0('t value (',mainEffect,'): ', summary(testmodel)[[10]][mainEffect,'t value'], sep=''), '\n')
-    if (!is.null(base_diff)) {
-        cat(paste0('MSE loss improvement over baseline model (', permutation_test_data, ' set): ', base_diff, '\n'))
-    }
     cat(paste0('p value: ', signif), '\n')
     cat(paste0('Baseline loglik: ', logLik(basemodel), '\n'))
     cat(paste0('Full loglik: ', logLik(testmodel), '\n'))
@@ -93,29 +76,8 @@ printSummary(base$model)
 smartPrint(paste('Summary of main effect (', setdiff(base$abl,main$abl), ') model', sep=''))
 printSummary(main$model)
 
-if (!is.null(permutation_test_data)) {
-    aov = NULL
-    if (permutation_test_data == 'train') {
-        mse1_file = gsub('.rdata', '.train.mse.txt', args[1])
-        mse2_file = gsub('.rdata', '.train.mse.txt', args[2])
-    } else if (permutation_test_data == 'dev') {
-        mse1_file = gsub('.rdata', '.dev.mse.txt', args[1])
-        mse2_file = gsub('.rdata', '.dev.mse.txt', args[2])
-    } else if (permutation_test_data == 'test') {
-        mse1_file = gsub('.rdata', '.test.mse.txt', args[1])
-        mse2_file = gsub('.rdata', '.test.mse.txt', args[2])
-    }
-    mse1 = read.csv(mse1_file, sep=' ', quote='', comment.char='', header=TRUE)
-    mse2 = read.csv(mse2_file, sep=' ', quote='', comment.char='', header=TRUE)
-    ptest_out = permutation_test(mse1$se, mse2$se, n_iter=10000, n_tail=2)
-    signif = ptest_out$p
-    base_diff = ptest_out$base_diff
-} else {
-    aov = anova(base$model, main$model)
-    base_diff = NULL
-    signif = aov[['Pr(>Chisq)']][[2]]
-}
-
+aov = anova(base$model, main$model)
+signif = aov[['Pr(>Chisq)']][[2]]
 
 cat('Significance results\n')
 smartPrint(paste('Baseline vs. Main Effect (', setdiff(base$abl,main$abl), ')', sep=''))
@@ -124,7 +86,6 @@ printSignifSummary(setdiff(base$abl,main$abl),
                    base$model,
                    main$model,
                    signif,
-                   base_diff,
                    aov)
 
 if (!is.null(main$lambda)) {

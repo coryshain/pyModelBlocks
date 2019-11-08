@@ -45,6 +45,8 @@ ae = abs(err)
 colnames(ae) = c('mae')
 se = err^2
 colnames(se) = c('mse')
+out = cbind(y_hat, err, ae, se)
+
 # write.table(cbind(y,y_hat,err,ae,se), file=outfile, quote=FALSE, row.names=FALSE)
-write.table(se, file=stdout(), quote=FALSE, col.names=FALSE, row.names=FALSE)
+write.table(out, file=stdout(), quote=FALSE, col.names=TRUE, row.names=FALSE)
 

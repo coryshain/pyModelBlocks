@@ -1,4 +1,4 @@
-from mb.core.tables import *
+from mb.core.general.tables import *
 
 
 #####################################
@@ -97,7 +97,7 @@ class Regression(MBType):
             return [
                 'bin/regress-%s' % cls.regression_type(),
                 '(DIR/)<RESMEASURES>.resmeasures'
-                'prm/<NAME>.regprm.ini'
+                'prm/<NAME>.%sprm.ini' % cls.regression_type()
             ]
 
         args = cls.parse_args(path)
@@ -116,7 +116,7 @@ class Regression(MBType):
         out = [
             'bin/regress-%s' % cls.regression_type(),
             os.path.join(directory, resmeasures),
-            'prm/%s.regprm.ini' % args['model_config_file']
+            'prm/%s.%sprm.ini' % (args['model_config_file'], cls.regression_type())
         ]
             
         return out
@@ -145,7 +145,7 @@ class Regression(MBType):
             self.path,
             ' '.join(preds),
             '%s%ssummary' % (self.path, DELIM[0]),
-            '%s%slog' % (self.path, DELIM[0])
+            DELIM[0].join((self.path,'log'))
         )
 
         return out
@@ -272,20 +272,20 @@ class Prediction(MBType):
         reg = self.pattern_prereqs()[0]
         executable, evmeasures, resmeasures = self.other_prereqs()
 
-        out = '%s %s %s %s  >  %s  2>  %s.log' % (
+        out = '%s %s %s %s  >  %s  2>  %s' % (
             executable.path,
             reg.path,
             evmeasures.path,
             resmeasures.path,
             self.path,
-            self.path
+            DELIM[0].join((self.path,'log'))
         )
 
         return out
 
 
 class Signif(MBType):
-    SUFFIX = DELIM[0] + 'signif'
+    SUFFIX = DELIM[0] + 'sig'
     PATTERN_PREREQ_TYPES = [Prediction]
     ARG_TYPES = [
         Arg(
@@ -368,7 +368,7 @@ class Signif(MBType):
             return [
                 'bin/signif-%s' % cls.signif_type(),
                 '(DIR/)<RESMEASURES>.resmeasures'
-                'prm/<NAME>.regprm.ini'
+                'prm/<NAME>.<REG>prm.ini'
             ]
 
         def powerset(iterable):
@@ -425,136 +425,11 @@ class Signif(MBType):
         executable = other_prereqs[0]
         preds = other_prereqs[1:] + self.pattern_prereqs()
 
-        out = '%s %s' % (
+        out = '%s %s  >  %s  2>  %s' % (
             executable.path,
-            ' '.join([x.path for x in preds])
+            ' '.join([x.path for x in preds]),
+            self.path,
+            DELIM[0].join((self.path,'log'))
         )
 
         return out
-
-
-
-
-
-#####################################
-#
-# REGRESSION EXECUTABLE TYPES
-#
-#####################################
-
-
-class RegressionExecutableLMER(RegressionExecutable):
-    MANIP = 'regress-lmer'
-    STATIC_PREREQ_TYPES = [ScriptsRegresslmer_sh, ScriptsLmertools_R, ScriptsRegresslmer_R]
-    DESCR_SHORT = 'LMER regression executable'
-    DESCR_LONG = "Exectuable for fitting a linear mixed-effects (LMER) regression model\n"
-
-    def body(self):
-        out = 'cp %s %s' % (
-            self.static_prereqs()[0].path,
-            self.path
-        )
-
-        return out
-
-
-
-
-
-#####################################
-#
-# PREDICTION EXECUTABLE TYPES
-#
-#####################################
-
-
-class PredictionExecutableLMER(PredictionExecutable):
-    MANIP = 'predict-lmer'
-    STATIC_PREREQ_TYPES = [ScriptsPredictlmer_sh, ScriptsLmertools_R, ScriptsPredictlmer_R]
-    DESCR_SHORT = 'LMER prediction executable'
-    DESCR_LONG = "Exectuable for prediction from a linear mixed-effects (LMER) regression model\n"
-
-    def body(self):
-        out = 'cp %s %s' % (
-            self.static_prereqs()[0].path,
-            self.path
-        )
-
-        return out
-
-
-
-
-
-#####################################
-#
-# PREDICTION EXECUTABLE TYPES
-#
-#####################################
-
-
-class SignifExecutableLRT(SignifExecutable):
-    MANIP = 'signif-lrt'
-    STATIC_PREREQ_TYPES = [ScriptsSigniflrt_sh, ScriptsLmertools_R, ScriptsSigniflrt_R, ScriptsSigniflrt_py]
-    DESCR_SHORT = 'LMER prediction executable'
-    DESCR_LONG = "Exectuable for prediction from a linear mixed-effects (LMER) regression model\n"
-
-    def body(self):
-        out = 'cp %s %s' % (
-            self.static_prereqs()[0].path,
-            self.path
-        )
-
-        return out
-
-
-
-
-
-#####################################
-#
-# REGRESSION TYPES
-#
-#####################################
-
-
-class RegressionLMER(Regression):
-    REGRESSION_TYPE = 'lmer'
-    DESCR_SHORT = 'LMER regression'
-    DESCR_LONG = "Run linear mixed-effects (LMER) regression\n"
-
-
-
-
-
-#####################################
-#
-# PREDICTION TYPES
-#
-#####################################
-
-
-class PredictionLMER(Prediction):
-    REGRESSION_TYPE = 'lmer'
-    DESCR_SHORT = 'LMER prediction'
-    DESCR_LONG = "Predict from linear mixed-effects (LMER) regression\n"
-
-
-
-
-
-#####################################
-#
-# SIGNIF TYPES
-#
-#####################################
-
-
-class SignifLRT(Signif):
-    PATTERN_PREREQ_TYPES = [PredictionLMER]
-    SIGNIF_TYPE = 'lrt'
-    DESCR_SHORT = 'LRT signif'
-    DESCR_LONG = "Likelihood ratio significance test(s). Only available for LMER models.\n"
-
-
-

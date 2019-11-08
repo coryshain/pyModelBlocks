@@ -1,4 +1,4 @@
-from mb.core.tables import *
+from mb.core.general.tables import *
 from mb.util.toks2sents import toks2sents
 from mb.util.sents2sentids import sents2sentids
 from mb.util.tabular import rt2timestamps

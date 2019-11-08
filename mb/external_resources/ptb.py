@@ -1,4 +1,4 @@
-from mb.core.text import *
+from mb.core.general.text import *
 
 
 #####################################
