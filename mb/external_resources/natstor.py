@@ -12,23 +12,15 @@ from mb.util.util_natstor import ns_text_normalizer, ns_docid_int2name, docids_b
 #####################################
 
 
-class NatstorRepo(ExternalResource):
+class NatstorRepo(Repo):
     URL = 'https://github.com/languageMIT/naturalstories'
+    GIT_URL = 'git@github.com:languageMIT/naturalstories.git'
     DESCR_SHORT = 'the Natural Stories Corpus'
     DESCR_LONG = (
         'A corpus of naturalistic stories meant to contain varied,\n'
         'low-frequency syntactic constructions. There are a variety of annotations\n'
         'and psycholinguistic measures available for the stories.\n'
     )
-
-    def body(self):
-        return 'git clone git@github.com:languageMIT/naturalstories.git %s' % self.path
-
-    @property
-    def max_timestamp(self):
-        max_timestamp = self.timestamp
-
-        return max_timestamp
 
 
 class LineTreesNatstorPennSource(ExternalResource):

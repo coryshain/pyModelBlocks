@@ -1,0 +1,25 @@
+body {
+    font-family: 'Questrial', sans-serif;
+    padding-bottom: 200px;
+}
+
+.container {
+    margin-top: 1rem;
+}
+
+.savebar {
+    display: block;
+    background-color:rgba(0, 0, 0, 0.5);;
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    padding: 1rem;
+    text-align: center;
+}
+
+input[type="submit"] {
+    margin: 0 4rem 0 4rem;
+    background: white;
+    font-size: 2rem;
+}

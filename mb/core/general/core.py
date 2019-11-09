@@ -1064,6 +1064,49 @@ class ExternalResource(StaticResource):
         return out
 
 
+class Repo(ExternalResource):
+    URL = ''
+    GIT_URL = ''
+    DESCR_SHORT = 'the Natural Stories Corpus'
+    DESCR_LONG = (
+        'A corpus of naturalistic stories meant to contain varied,\n'
+        'low-frequency syntactic constructions. There are a variety of annotations\n'
+        'and psycholinguistic measures available for the stories.\n'
+    )
+
+    @property
+    def max_timestamp(self):
+        max_timestamp = self.timestamp
+
+        return max_timestamp
+
+    @classmethod
+    def url(cls):
+        return cls.URL
+
+    @classmethod
+    def git_url(cls):
+        return cls.GIT_URL
+
+    def body(self):
+        if self.git_url():
+            return 'git clone %s %s' % (self.git_url(), self.path)
+
+        def out():
+            warn_str = (
+                '%s does not exist at the default path (%s),\n'
+                'but it is not publicly available and cannot be downloaded automatically.'
+                'You must first acquire it from the source.\n'
+            ) % USER_SETTINGS.get(
+                type(self).__name__ + '_path',
+                DEFAULT_SETTINGS[type(self).__name__ + '_path']
+            )
+            tostderr(warn_str)
+            raise NotImplementedError
+
+        return out
+
+
 
 
 

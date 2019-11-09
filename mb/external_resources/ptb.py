@@ -107,7 +107,7 @@ class LineTreesPTB(LineTrees):
 #####################################
 
 
-class PennTreebankRepo(ExternalResource):
+class PennTreebankRepo(Repo):
     URL = 'https://catalog.ldc.upenn.edu/ldc99t42'
     DESCR_SHORT = 'the Penn Treebank (PTB)'
     DESCR_LONG = (
@@ -117,12 +117,6 @@ class PennTreebankRepo(ExternalResource):
         'A fully tagged version of the Brown Corpus.\n'
         'Brown parsed text.\n'
     )
-
-    def __init__(
-            self,
-            dump=False
-    ):
-        super(PennTreebankRepo, self).__init__()
 
 
 WSJ_SECTIONS = create_classes_from_ptb_dir(

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+    <!-- Metadata -->
+    <meta charset="utf-8">
+    <title>ModelBlocks</title>
+    <meta name="description" content="Assistant for building ModelBlocks targets.">
+    <meta name="author" content="Cory Shain">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Favicon -->
+
+    <!-- Stylesheets -->
+    <link href='https://fonts.googleapis.com/css?family=Questrial' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.5.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='Skeleton-2.0.4/css/normalize.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='Skeleton-2.0.4/css/skeleton.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='mb.css') }}">
+    <style id="customCSS"></style>
+
+</head>
+
+<body>
+
+    {% block content %}{% endblock %}
+
+</body>
+</html>

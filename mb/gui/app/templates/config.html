@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <h1>Edit ModelBlocks Config</h1>
+    </div>
+    <div>
+        <form action='' method="post">
+            {{ form.hidden_tag() }}
+            {% for key in keys %}
+                {{ form[key].label }}
+                {{ form[key](size=64) }}
+            {% endfor %}
+            <div class="savebar">{{ form.save() }}{{ form.exit() }}</div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
