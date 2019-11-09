@@ -50,7 +50,7 @@ HISTORY.optionxform = str
 HISTORY.read(HISTORY_PATH)
 HISTORY_SETTINGS = HISTORY['settings']
 
-CFLAGS = USER_SETTINGS.get('cflags', DEFAULT_SETTINGS['cflags'])
+CFLAGS = USER_SETTINGS.get('c_flags', DEFAULT_SETTINGS['c_flags'])
 
 DELIM = [
     '.',

@@ -104,15 +104,15 @@ class Evalb(MBType):
 class Indent(MBType):
     MANIP = 'indent'
     STATIC_PREREQ_TYPES = [SrcRvtl, SrcIndent_cpp]
-    CONFIG_KEYS = [('cflags', '-DNDEBUG -O3')]
+    CONFIG_KEYS = [('c_flags', USER_SETTINGS.get('c_flags', DEFAULT_SETTINGS['c_flags']))]
     FILE_TYPE = None
 
     def body(self):
-        cflags = self.config_values()[0][2]
+        c_flags = self.config_values()[0][2]
 
         return 'g++ -I%s -Wall %s -g -lm  %s  -o %s' % (
             os.path.abspath(self.static_prereqs()[0].path),
-            cflags,
+            c_flags,
             self.static_prereqs()[1].path,
             self.path
         )
