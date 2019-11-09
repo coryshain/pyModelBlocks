@@ -10,7 +10,7 @@ from mb.external_resources.cdr import CDRRepo
 
 class RegressionExecutableCDR(RegressionExecutable):
     MANIP = 'regress-cdr'
-    STATIC_PREREQ_TYPES = [ScriptsRegresscdr_sh, CDRRepo]
+    STATIC_PREREQ_TYPES = ['scripts/regress-cdr.sh', CDRRepo]
     DESCR_SHORT = 'CDR regression executable'
     DESCR_LONG = "Exectuable for fitting a continuous-time deconvolutional regression (CDR) model\n"
 
@@ -35,7 +35,7 @@ class RegressionExecutableCDR(RegressionExecutable):
 
 class PredictionExecutableCDR(PredictionExecutable):
     MANIP = 'predict-cdr'
-    STATIC_PREREQ_TYPES = [ScriptsPredictcdr_sh, CDRRepo]
+    STATIC_PREREQ_TYPES = ['scripts/predict-cdr.sh', CDRRepo]
     DESCR_SHORT = 'CDR prediction executable'
     DESCR_LONG = "Exectuable for prediction from a continuous-time deconvolutional regression (CDR) model\n"
 

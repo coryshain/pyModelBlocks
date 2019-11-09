@@ -305,6 +305,7 @@ class MBType(object):
 
         self.pattern_prereqs_all_paths_src = []
         self.pattern_prereqs_src = []
+        self.static_prereqs_all_paths_src = []
         self.static_prereqs_src = []
         self.other_prereqs_all_paths_src = []
         self.other_prereqs_src = []
@@ -336,9 +337,13 @@ class MBType(object):
             if old != new:
                 max_timestamp = np.inf
                 break
+
         if max_timestamp < np.inf:
             for s in self.pattern_prereqs_src + self.static_prereqs_src + self.other_prereqs_src:
                 max_timestamp = max(max_timestamp, s.max_timestamp)
+
+        if max_timestamp == self.timestamp == -np.inf:
+            max_timestamp = np.inf
 
         # if max_timestamp > self.timestamp:
         #     max_timestamp = np.inf
@@ -889,13 +894,20 @@ class MBType(object):
         self.pattern_prereqs_src = prereqs
 
     def set_static_prereqs(self, prereqs):
-        self.static_prereqs_src = prereqs
-        if self.static_prereqs_src is not None:
-            for p in self.pattern_prereqs_all_paths_src:
+        self.static_prereqs_all_paths_src = prereqs
+
+        prereqs = []
+        if self.static_prereqs_all_paths_src is not None:
+            for p in self.static_prereqs_all_paths_src:
+                assert len(p) <= 1, 'Static prereqs cannot be ambiguous, but multiple options were found for %s: %s' % (self, p)
                 # Update dependents
                 for _p in p:
                     if issubclass(_p.__class__, MBType):
                         _p.dependents.add(self)
+                candidates = sorted(list(p), key=cmp_to_key(prereq_comparator))
+                prereqs.append(candidates[0])
+
+        self.static_prereqs_src = prereqs
 
     def set_other_prereqs(self, prereqs):
         self.other_prereqs_all_paths_src = prereqs
@@ -950,8 +962,13 @@ class StaticResource(MBType):
         "Abstract base class for dependency to a static resource.\n"
     )
 
-    def __init__(self):
-        super(StaticResource, self).__init__(self.DEFAULT_LOCATION)
+    def __init__(self, path):
+        super(StaticResource, self).__init__(path)
+
+    @property
+    def max_timestamp(self):
+        # return self.timestamp
+        return -np.inf
 
     @classmethod
     def default_location(cls):
@@ -963,13 +980,8 @@ class StaticResource(MBType):
         return path, path, path
 
     @classmethod
-    def is_abstract(cls):
-        return cls.__name__ == 'StaticResource'
-
-    @classmethod
     def match(cls, path):
-        out = os.path.abspath(path) == os.path.abspath(cls.infer_paths()[0])
-        return out
+        return os.path.exists(os.path.normpath(path))
 
     def body(self):
         return self.data
@@ -984,7 +996,7 @@ class ExternalResource(StaticResource):
     )
 
     def __init__(self):
-        super(ExternalResource, self).__init__()
+        super(ExternalResource, self).__init__(self.default_location())
 
         self.path, self.rel_path_cur, self.rel_path_prev = self.infer_paths()
         self.basename = os.path.basename(self.path)
@@ -1058,6 +1070,11 @@ class ExternalResource(StaticResource):
     def is_abstract(cls):
         return cls.__name__ == 'ExternalResource'
 
+    @classmethod
+    def match(cls, path):
+        out = os.path.abspath(path) == os.path.abspath(cls.infer_paths()[0])
+        return out
+
     def body_args(self):
         out = self.static_prereqs()
 
@@ -1117,21 +1134,6 @@ class Repo(ExternalResource):
 #####################################
 
 
-class FoundFile(MBType):
-    DESCR_SHORT = 'found file'
-    DESCR_LONG = (
-        "Class to represent found files.\n"
-        "A found file cannot be built but exists at the specified path.\n"
-        "Found files are always treated as old.\n"
-        "They are also given lowest precedence for dependency path selection,\n"
-        "so targets will be rebuilt if they can be and are out of date."
-    )
-
-    @property
-    def max_timestamp(self):
-        return -np.inf
-
-
 class ParamFile(MBType):
     SUFFIX = 'prm.ini'
     PRECIOUS = True
@@ -1140,7 +1142,15 @@ class ParamFile(MBType):
 
     @classmethod
     def match(cls, path):
-        return path.endswith(cls.suffix())
+        out = (
+            path.endswith(cls.suffix()) and
+            not (
+                os.path.basename(os.path.dirname(path)) == 'prm' and
+                os.path.basename(os.path.dirname(os.path.dirname(path))) == 'static_resources'
+            )
+        )
+
+        return out
 
     @classmethod
     def parse_path(cls, path, has_prefix=False, has_suffix=False):
@@ -1163,7 +1173,7 @@ class ParamFile(MBType):
         if path is None:
             return ['(DIR/)<NAME>%s<TYPE>prm%sini' % (DELIM[0], DELIM[0])]
         out = [cls.parse_path(path)['src']]
-        
+
         return out
 
     def body(self):
@@ -1327,7 +1337,7 @@ class Graph(object):
         for target_path in self.target_paths:
             successes = SuccessSet()
             failures = FailureSet()
-            inheritors = MBType.inheritors() - {MBFailure, FoundFile}
+            inheritors = MBType.inheritors() - {MBFailure, StaticResource}
 
             for c in inheritors:
                 if not c.is_abstract():
@@ -1345,7 +1355,7 @@ class Graph(object):
                             has_suffix=has_suffix_cur
                         )
                         pat = subgraph['pattern_prereqs_all_paths']
-                        stat = subgraph['static_prereqs']
+                        stat = subgraph['static_prereqs_all_paths']
                         oth = subgraph['other_prereqs_all_paths']
                         success_ratio_cur = subgraph['success_ratio']
                         match_cur = subgraph['match']
@@ -1353,7 +1363,7 @@ class Graph(object):
                         if success_ratio_cur == 1:
                             p = self[(c, target_path, has_prefix_cur, has_suffix_cur)]
                             if p is None:
-                                if issubclass(c, StaticResource):
+                                if issubclass(c, ExternalResource):
                                     p = c()
                                 else:
                                     p = c(target_path)
@@ -1363,6 +1373,7 @@ class Graph(object):
                                 p.has_prefix_src = has_prefix_cur
                                 p.has_suffix_src = has_suffix_cur
                                 self.add_node(p)
+
                             p.dump = True
                             p.set_dump()
                             p.intermediate = False
@@ -1380,7 +1391,7 @@ class Graph(object):
                 to_append = successes
             else:
                 if os.path.exists(target_path):
-                    to_append = SuccessSet({FoundFile(target_path)})
+                    to_append = SuccessSet({StaticResource(target_path)})
                 elif len(failures) > 0:
                     to_append = failures
                 else:
@@ -1416,30 +1427,73 @@ class Graph(object):
             downstream_paths = set()
         downstream_paths.add(path)
         pattern_prereqs_all_paths = None
-        static_prereqs = None
+        static_prereqs_all_paths = None
         other_prereqs_all_paths = None
 
         parsed = cls.parse_path(path, has_prefix=has_prefix, has_suffix=has_suffix)
         if parsed is not None:
             # STATIC PREREQS
             static_prereq_types = cls.static_prereq_types()[:]
-            static_prereqs = []
+            static_prereqs_all_paths = []
             for c in static_prereq_types:
-                prereq_path = c.infer_paths()[0]
-                subgraph = self.build_subgraph(c, prereq_path)
-                pat = subgraph['pattern_prereqs_all_paths']
-                stat = subgraph['static_prereqs']
-                oth = subgraph['other_prereqs_all_paths']
+                successes = SuccessSet()
+                failures = FailureSet()
 
-                p = self[(c, prereq_path, False, False)]
-                if p is None:
-                    p = c()
-                    p.set_pattern_prereqs(pat)
-                    p.set_static_prereqs(stat)
-                    p.set_other_prereqs(oth)
-                    self.add_node(p)
-                static_prereqs.append(p)
-            static_prereqs = static_prereqs
+                if isinstance(c, str):
+                    prereq_path = os.path.join(STATIC_RESOURCES_DIR, os.path.normpath(c))
+                    c = StaticResource
+                elif issubclass(c, ExternalResource):
+                    prereq_path = c.infer_paths()[0]
+                else:
+                    raise ValueError('Class %s is not a valid static prereq but has been requested as one. Fix the type definition.' % c)
+
+                if prereq_path not in downstream_paths:
+                    subgraph = self.build_subgraph(
+                        c,
+                        prereq_path,
+                        downstream_paths=downstream_paths.copy()
+                    )
+                    pat = subgraph['pattern_prereqs_all_paths']
+                    stat = subgraph['static_prereqs_all_paths']
+                    oth = subgraph['other_prereqs_all_paths']
+                    success_ratio_cur = subgraph['success_ratio']
+                    match_cur = subgraph['match']
+
+                    if success_ratio_cur == 1:
+                        p = self[(c, prereq_path, False, False)]
+                        if p is None:
+                            if issubclass(c, ExternalResource):
+                                p = c()
+                            else:
+                                p = c(prereq_path)
+                            p.set_pattern_prereqs(pat)
+                            p.set_static_prereqs(stat)
+                            p.set_other_prereqs(oth)
+                            self.add_node(p)
+                        p.set_dump()
+                        successes.add(p)
+                    elif match_cur:
+                        p = MBFailure(prereq_path, c)
+                        p.set_pattern_prereqs(pat)
+                        p.set_static_prereqs(stat)
+                        p.set_other_prereqs(oth)
+                        failures.add(p)
+
+                if len(successes) > 0:
+                    to_append = successes
+                else:
+                    if os.path.exists(prereq_path):
+                        to_append = SuccessSet({StaticResource(prereq_path)})
+                    elif len(failures) > 0:
+                        to_append = failures
+                    else:
+                        if prereq_path not in downstream_paths:
+                            name = prereq_path
+                        else:
+                            name = prereq_path + ' (cyclic dependency)'
+                        to_append = FailureSet([name])
+
+                static_prereqs_all_paths.append(to_append)
 
             has_buildable_prereqs = (len(cls.pattern_prereq_types()) > 0) or (len(cls.other_prereq_paths(path)) > 0)
 
@@ -1458,7 +1512,7 @@ class Graph(object):
                     inheritors = P.inheritors()
                     if not P.is_abstract():
                         inheritors |= {P}
-                    inheritors -= {MBFailure, FoundFile}
+                    inheritors -= {MBFailure, StaticResource}
 
                     if prereq_path not in downstream_paths:
                         for c in inheritors:
@@ -1478,7 +1532,7 @@ class Graph(object):
                                         downstream_paths=downstream_paths.copy()
                                     )
                                     pat = subgraph['pattern_prereqs_all_paths']
-                                    stat = subgraph['static_prereqs']
+                                    stat = subgraph['static_prereqs_all_paths']
                                     oth = subgraph['other_prereqs_all_paths']
                                     success_ratio_cur = subgraph['success_ratio']
                                     match_cur = subgraph['match']
@@ -1486,7 +1540,7 @@ class Graph(object):
                                     if success_ratio_cur == 1:
                                         p = self[(c, prereq_path, has_prefix_cur, has_suffix_cur)]
                                         if p is None:
-                                            if issubclass(c, StaticResource):
+                                            if issubclass(c, ExternalResource):
                                                 p = c()
                                             else:
                                                 p = c(prereq_path)
@@ -1511,7 +1565,7 @@ class Graph(object):
                         to_append = successes
                     else:
                         if os.path.exists(prereq_path):
-                            to_append = SuccessSet({FoundFile(prereq_path)})
+                            to_append = SuccessSet({StaticResource(prereq_path)})
                         elif len(failures) > 0:
                             to_append = failures
                         else:
@@ -1534,7 +1588,7 @@ class Graph(object):
                     inheritors = P.inheritors()
                     if not P.is_abstract():
                         inheritors |= {P}
-                    inheritors -= {MBFailure, FoundFile}
+                    inheritors -= {MBFailure, StaticResource}
 
                     if prereq_path not in downstream_paths:
                         for c in inheritors:
@@ -1554,7 +1608,7 @@ class Graph(object):
                                         downstream_paths=downstream_paths.copy()
                                     )
                                     pat = subgraph['pattern_prereqs_all_paths']
-                                    stat = subgraph['static_prereqs']
+                                    stat = subgraph['static_prereqs_all_paths']
                                     oth = subgraph['other_prereqs_all_paths']
                                     success_ratio_cur = subgraph['success_ratio']
                                     match_cur = subgraph['match']
@@ -1562,7 +1616,7 @@ class Graph(object):
                                     if success_ratio_cur == 1:
                                         p = self[(c, prereq_path, has_prefix_cur, has_suffix_cur)]
                                         if p is None:
-                                            if issubclass(c, StaticResource):
+                                            if issubclass(c, ExternalResource):
                                                 p = c()
                                             else:
                                                 p = c(prereq_path)
@@ -1587,7 +1641,7 @@ class Graph(object):
                         to_append = successes
                     else:
                         if os.path.exists(prereq_path):
-                            to_append = SuccessSet({FoundFile(prereq_path)})
+                            to_append = SuccessSet({StaticResource(prereq_path)})
                         elif len(failures) > 0:
                             to_append = failures
                         else:
@@ -1604,7 +1658,8 @@ class Graph(object):
 
             success_ratio_num = 0
             success_ratio_denom = 0
-            for x in pattern_prereqs_all_paths + other_prereqs_all_paths:
+
+            for x in static_prereqs_all_paths + pattern_prereqs_all_paths + other_prereqs_all_paths:
                 if isinstance(x, SuccessSet):
                     success_ratio_num += 1
                 success_ratio_denom += 1
@@ -1620,7 +1675,7 @@ class Graph(object):
 
         return {
             'pattern_prereqs_all_paths': pattern_prereqs_all_paths,
-            'static_prereqs': static_prereqs,
+            'static_prereqs_all_paths': static_prereqs_all_paths,
             'other_prereqs_all_paths': other_prereqs_all_paths,
             'success_ratio': success_ratio,
             'match': match
@@ -1759,11 +1814,6 @@ class Graph(object):
             for n in list(stale_nodes):
                 source = True
                 node = self[n]
-                if node is None:
-                    print(n)
-                    for x in sorted(list(self.nodes), key=lambda x:x[1]):
-                        print('  ' + str(x))
-                    input()
                 for p in node.pattern_prereqs() + node.static_prereqs() + node.other_prereqs():
                     if p.graph_key in stale_nodes:
                         source = False
@@ -1943,20 +1993,3 @@ class Graph(object):
             out = None
 
         return out
-
-
-
-
-
-#####################################
-#
-# INFER STATIC RESOURCE TYPES
-#
-#####################################
-
-
-static_classes = create_classes_from_dir(STATIC_RESOURCES_DIR)
-for c in static_classes:
-    globals()[c.__name__] = c
-del static_classes
-

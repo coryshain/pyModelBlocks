@@ -39,7 +39,7 @@ def create_classes_from_ptb_dir(directory, name='WSJ'):
 
         attr_dict = {
             'MANIP': MANIP,
-            'STATIC_PREREQ_TYPES': [globals()[src_class_name], ScriptsEditabletrees2linetrees_pl],
+            'STATIC_PREREQ_TYPES': [globals()[src_class_name], 'scripts/editabletrees2linetrees.pl'],
             'CORPUS': name.lower(),
             'SECTION': sect,
             'DESCR_SHORT': descr,

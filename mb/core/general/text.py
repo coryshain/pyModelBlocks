@@ -94,7 +94,7 @@ class TokDeps(MBType):
 
 class Evalb(MBType):
     MANIP = 'evalb'
-    STATIC_PREREQ_TYPES = [SrcEvalb_c]
+    STATIC_PREREQ_TYPES = ['src/evalb.c']
     FILE_TYPE = None
 
     def body(self):
@@ -103,7 +103,7 @@ class Evalb(MBType):
 
 class Indent(MBType):
     MANIP = 'indent'
-    STATIC_PREREQ_TYPES = [SrcRvtl, SrcIndent_cpp]
+    STATIC_PREREQ_TYPES = ['src/rvtl', 'src/indent.cpp']
     CONFIG_KEYS = [('c_flags', USER_SETTINGS.get('c_flags', DEFAULT_SETTINGS['c_flags']))]
     FILE_TYPE = None
 
@@ -130,7 +130,7 @@ class Indent(MBType):
 
 class LineTreesFromEditableTrees(LineTrees):
     PATTERN_PREREQ_TYPES = [EditableTrees]
-    STATIC_PREREQ_TYPES = [ScriptsEditabletrees2linetrees_pl]
+    STATIC_PREREQ_TYPES = ['scripts/editabletrees2linetrees.pl']
     DESCR_SHORT = 'linetrees from editabletrees'
     DESCR_LONG = "Convert editabletrees into linetrees.\n"
 
@@ -295,7 +295,7 @@ class LineTreesMaxWords(LineTrees):
 class LineTreesNoUnary(LineTrees):
     MANIP = '.nounary'
     PATTERN_PREREQ_TYPES = [LineTrees]
-    STATIC_PREREQ_TYPES = [ScriptsMaketreesnounary_pl]
+    STATIC_PREREQ_TYPES = ['scripts/make-trees-nounary.pl']
     DESCR_SHORT = 'no-unary linetrees'
     DESCR_LONG = "Collapse unary CFG expansions.\n"
 
@@ -544,7 +544,7 @@ class EditableTreesFromLineTrees(EditableTrees):
 class EditableTreesNumbered(EditableTrees):
     MANIP = '.numbered'
     PATTERN_PREREQ_TYPES = [EditableTrees]
-    STATIC_PREREQ_TYPES = [ScriptsMaketreesnumbered_pl]
+    STATIC_PREREQ_TYPES = ['scripts/make-trees-numbered.pl']
     DESCR_SHORT = 'numbered editabletrees'
     DESCR_LONG = "Add line numbers to editable trees.\n"
 
@@ -629,7 +629,7 @@ class LineToksReversed(LineToks):
 
 class RulesFromLineTrees(Rules):
     PATTERN_PREREQ_TYPES = [LineTrees]
-    STATIC_PREREQ_TYPES = [ScriptsTrees2rules_pl]
+    STATIC_PREREQ_TYPES = ['scripts/trees2rules.pl']
     DESCR_SHORT = 'rules from linetrees'
     DESCR_LONG = 'Convert linetrees into table of CFG rules'
 
@@ -700,7 +700,7 @@ class ModelHead(Model):
 class Syneval(MBType):
     SUFFIX = '.syneval'
     PATTERN_PREREQ_TYPES = [LineTrees, LineTrees]
-    STATIC_PREREQ_TYPES = [PrmEvalb_prm]
+    STATIC_PREREQ_TYPES = ['prm/evalb.prm']
     DESCR_SHORT = 'syneval'
     DESCR_LONG = "Evaluate one syntactic annotation (parse) against another.\n"
 
@@ -779,7 +779,7 @@ class ConstitEvalSuffix(ConstitEval):
 class BootstrapSignif(MBType):
     SUFFIX = '.bootstrapsignif'
     PATTERN_PREREQ_TYPES = [Syneval, Syneval]
-    STATIC_PREREQ_TYPES = [ScriptsCompare_pl]
+    STATIC_PREREQ_TYPES = ['scripts/compare.pl']
     DESCR_SHORT = 'syneval signif test'
     DESCR_LONG = "Statistically compare difference between two synevals by bootstrap test.\n"
 

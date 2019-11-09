@@ -9,7 +9,7 @@ from mb.core.regression.regression import *
 
 class RegressionExecutableLMER(RegressionExecutable):
     MANIP = 'regress-lmer'
-    STATIC_PREREQ_TYPES = [ScriptsRegresslmer_sh, ScriptsLmertools_R, ScriptsRegresslmer_R]
+    STATIC_PREREQ_TYPES = ['scripts/regress-lmer.sh', 'scripts/lmer-tools.R', 'scripts/regress-lmer.R']
     DESCR_SHORT = 'LMER regression executable'
     DESCR_LONG = "Exectuable for fitting a linear mixed-effects (LMER) regression model"
 
@@ -34,7 +34,7 @@ class RegressionExecutableLMER(RegressionExecutable):
 
 class PredictionExecutableLMER(PredictionExecutable):
     MANIP = 'predict-lmer'
-    STATIC_PREREQ_TYPES = [ScriptsPredictlmer_sh, ScriptsLmertools_R, ScriptsPredictlmer_R]
+    STATIC_PREREQ_TYPES = ['scripts/predict-lmer.sh', 'scripts/lmer-tools.R', 'scripts/predict-lmer.R']
     DESCR_SHORT = 'LMER prediction executable'
     DESCR_LONG = "Exectuable for prediction from a linear mixed-effects (LMER) regression model"
 
@@ -59,7 +59,7 @@ class PredictionExecutableLMER(PredictionExecutable):
 
 class SignifExecutableLRT(SignifExecutable):
     MANIP = 'signif-lrt'
-    STATIC_PREREQ_TYPES = [ScriptsSigniflrt_sh, ScriptsLmertools_R, ScriptsSigniflrt_R, ScriptsSignif_py]
+    STATIC_PREREQ_TYPES = ['scripts/signif-lrt.sh', 'scripts/lmer-tools.R', 'scripts/signif-lrt.R', 'scripts/signif.py']
     DESCR_SHORT = 'LRT signif executable'
     DESCR_LONG = "Exectuable for computing likelihood ratio test (LRT)"
 

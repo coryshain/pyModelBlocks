@@ -43,7 +43,7 @@ class NatstorTokSource(ExternalResource):
 
 class NatstorProcessRTs(ExternalResource):
     DEFAULT_LOCATION = 'naturalstories_RTS/process_ns_mb.R'
-    STATIC_PREREQ_TYPES = [NatstorRepo, ScriptsProcess_ns_mb_R]
+    STATIC_PREREQ_TYPES = [NatstorRepo, 'scripts/process_ns_mb.R']
     PARENT_RESOURCE = NatstorRepo
     FILE_TYPE = None
     DESCR_SHORT = 'RT processing script'
@@ -99,7 +99,7 @@ class NatstorAudioSource(ExternalResource):
 
 class LineTreesNatstorPTB(LineTrees):
     MANIP = 'naturalstories.ptb'
-    STATIC_PREREQ_TYPES = [LineTreesNatstorPennSource, ScriptsEditabletrees2linetrees_pl]
+    STATIC_PREREQ_TYPES = [LineTreesNatstorPennSource, 'scripts/editabletrees2linetrees.pl']
     DESCR_SHORT = 'naturalstories gold ptb linetrees'
     DESCR_LONG = (
         "Hand-annotated parse trees for the Natural Stories corpus.\n"

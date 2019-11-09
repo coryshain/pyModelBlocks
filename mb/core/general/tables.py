@@ -77,7 +77,7 @@ class ResMeasures(MBType):
 class TokMeasuresDLT(TokMeasures):
     MANIP = '.dlt'
     PATTERN_PREREQ_TYPES = [GoldLineTrees]
-    STATIC_PREREQ_TYPES = [ScriptsDlt_py]
+    STATIC_PREREQ_TYPES = ['scripts/dlt.py']
     DESCR = 'DLT measures'
     DESCR_LONG = 'Compute DLT (integration cost) measures from linetrees'
 

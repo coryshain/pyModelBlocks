@@ -448,7 +448,7 @@ class Signif(MBType):
 
 class SignifExecutablePT(SignifExecutable):
     MANIP = 'signif-pt'
-    STATIC_PREREQ_TYPES = [ScriptsSignifpt_sh, ScriptsSignif_py]
+    STATIC_PREREQ_TYPES = ['scripts/signif-pt.sh', 'scripts/signif.py']
     DESCR_SHORT = 'PT prediction executable'
     DESCR_LONG = "Exectuable for prediction from a linear mixed-effects (LMER) regression model"
 
