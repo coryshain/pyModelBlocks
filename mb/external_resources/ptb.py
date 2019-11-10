@@ -94,7 +94,7 @@ class LineTreesPTB(LineTrees):
 
     @classmethod
     def is_abstract(cls):
-        return cls.__name__ == 'PTBSection'
+        return cls.__name__ == 'LineTreesPTB'
 
 
 

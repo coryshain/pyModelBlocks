@@ -88,6 +88,27 @@ class TokDeps(MBType):
 
 #####################################
 #
+# Params
+#
+#####################################
+
+
+class EvalbPrm(MBType):
+    MANIP = 'evalb.prm'
+    STATIC_PREREQ_TYPES = ['prm/evalb.prm']
+    FILE_TYPE = None
+    PRECIOUS = True
+
+    def body(self):
+        out = 'cp %s %s' % (self.static_prereqs()[0].path, self.path)
+
+        return out
+
+
+
+
+#####################################
+#
 # COMPILED BINARIES
 #
 #####################################
@@ -96,6 +117,7 @@ class Evalb(MBType):
     MANIP = 'evalb'
     STATIC_PREREQ_TYPES = ['src/evalb.c']
     FILE_TYPE = None
+    PRECIOUS = True
 
     def body(self):
         return 'gcc -Wall -g -o %s %s' % (self.path, self.static_prereqs()[0].path)
@@ -106,6 +128,7 @@ class Indent(MBType):
     STATIC_PREREQ_TYPES = ['src/rvtl', 'src/indent.cpp']
     CONFIG_KEYS = [('c_flags', USER_SETTINGS.get('c_flags', DEFAULT_SETTINGS['c_flags']))]
     FILE_TYPE = None
+    PRECIOUS = True
 
     def body(self):
         c_flags = self.config_values()[0][2]
@@ -700,16 +723,16 @@ class ModelHead(Model):
 class Syneval(MBType):
     SUFFIX = '.syneval'
     PATTERN_PREREQ_TYPES = [LineTrees, LineTrees]
-    STATIC_PREREQ_TYPES = ['prm/evalb.prm']
     DESCR_SHORT = 'syneval'
     DESCR_LONG = "Evaluate one syntactic annotation (parse) against another.\n"
 
     def body(self):
         linetrees = self.pattern_prereqs()
+        bin, prm = self.other_prereqs()
 
         out = '%s -p %s %s %s > %s' % (
-            self.other_prereqs()[0].path,
-            self.static_prereqs()[0].path,
+            bin.path,
+            prm.path,
             linetrees[0].path,
             linetrees[1].path,
             self.path
@@ -719,21 +742,18 @@ class Syneval(MBType):
 
     @classmethod
     def other_prereq_paths(cls, path):
-        return ['bin/evalb']
-
-    @classmethod
-    def other_prereq_type(cls, i, path):
-        return Evalb
+        return [
+            'bin/evalb',
+            'prm/evalb.prm'
+        ]
 
     @classmethod
     def other_prereq_type(cls, i, path):
         if i == 0:
-            return RegressionExecutable
+            return Evalb
         if i == 1:
-            return ResMeasures
-        if i == 2:
-            return ParamFile
-        raise TypeError(other_prereq_type_err_msg(i, 3))
+            return EvalbPrm
+        raise TypeError(other_prereq_type_err_msg(i, 2))
 
 
 class SynevalErrors(MBType):
@@ -743,10 +763,7 @@ class SynevalErrors(MBType):
     DESCR_LONG = "Report parse errors in trees (2nd arg) compared to gold (1st arg).\n"
 
     def body(self):
-        def out(*args):
-            gold = args[0]
-            pred = args[1]
-
+        def out(gold, pred):
             outputs = compare_trees(gold, pred)
 
             return outputs
@@ -761,10 +778,7 @@ class ConstitEval(MBType):
     DESCR_LONG = "Run constituent evaluation (suite of metrics for unsupervised parsing eval).\n"
 
     def body(self):
-        def out(*args):
-            gold = iter(args[0])
-            pred = iter(args[1])
-
+        def out(gold, pred):
             outputs = constit_eval(gold, pred)
 
             return outputs
@@ -812,10 +826,7 @@ class TokDepsFromLineTrees(TokDeps):
     DESCR_LONG = 'Compute dependency representation from linetrees file, using empirically-derived head probabilities'
 
     def body(self):
-        def out(*args):
-            trees = args[0]
-            headmodel = args[0]
-
+        def out(trees, headmodel):
             outputs = trees2deps(trees, headmodel)
 
             return outputs

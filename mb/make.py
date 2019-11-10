@@ -3,7 +3,6 @@ import argparse
 
 from . import *
 
-
 class ArgumentParser(argparse.ArgumentParser):
 
     def error(self, message):

@@ -136,22 +136,34 @@ def create_classes_from_dir(directory, parent_name=''):
 
 def read_data(path, read_mode='r', sep=DEFAULT_SEP):
     data = None
-    if read_mode is not None:
-        if read_mode == 'pandas':
-            if os.path.exists(path):
-                data = pd.read_csv(path, sep=sep)
-        else:
-            is_text = read_mode[-1] != 'b'
-            data = None
-            if os.path.exists(path):
-                if os.path.isfile(path):
-                    with open(path, read_mode) as f:
-                        if is_text:
+
+    if os.path.exists(path):
+        if os.path.isfile(path):
+            if read_mode == 'auto':
+                try:
+                    data = data = pd.read_csv(path, sep=sep)
+                except pd.errors.ParserError:
+                    try:
+                        with open(path, 'r') as f:
                             data = f.readlines()
-                        else:
-                            data = pickle.load(f)
-                else:
-                    data = 'Directory target'
+                    except UnicodeDecodeError:
+                        try:
+                            with open(path, 'rb') as f:
+                                data = pickle.load(f)
+                        except EOFError:
+                            pass
+            elif read_mode == 'pandas':
+                data = pd.read_csv(path, sep=sep)
+            elif read_mode == 'r':
+                with open(path, read_mode) as f:
+                    data = f.readlines()
+            elif read_mode == 'rb':
+                with open(path, read_mode) as f:
+                    data = pickle.load(f)
+            elif read_mode is not None:
+                raise ValueError('Unrecognized read mode: %s/.' % read_mode)
+        else:
+            data = 'Directory target'
 
     return data
 
@@ -470,10 +482,12 @@ class MBType(object):
             return 'pandas'
         elif file_type == 'python':
             return 'rb'
+        elif file_type == 'auto':
+            return 'auto'
         elif file_type == None:
             return None
         else:
-            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'python', None]." % file_type)
+            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'table', 'python', 'auto', None]." % file_type)
 
     @classmethod
     def write_mode(cls):
@@ -484,10 +498,12 @@ class MBType(object):
             return 'pandas'
         elif file_type == 'python':
             return 'wb'
+        elif file_type == 'auto':
+            return 'auto'
         elif file_type == None:
             return None
         else:
-            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'python', None]." % file_type)
+            raise ValueError("Unrecognized file type %s. Must be one of ['text', 'table', 'python', 'auto', None]." % file_type)
 
     @classmethod
     def file_type(cls):
@@ -613,7 +629,7 @@ class MBType(object):
                     basenames = basenames[1:]
                 else:
                     prefix = ''
-                if len(basenames) == 0:
+                if len(basenames) < len(cls.pattern_prereq_types()):
                     out = None
                 else:
                     if has_suffix:
@@ -621,7 +637,7 @@ class MBType(object):
                         basenames = basenames[:-1]
                     else:
                         suffix = ''
-                    if len(basenames) == 0:
+                    if len(basenames) < len(cls.pattern_prereq_types()):
                         out = None
                     else:
                         basenames = [os.path.join(directory, DELIM[0].join(
@@ -726,10 +742,11 @@ class MBType(object):
         self.data = data
 
     def body(self):
+        print(self)
         raise NotImplementedError
 
     def body_args(self):
-        out = self.pattern_prereqs() + self.other_prereqs()
+        out = self.pattern_prereqs() + self.static_prereqs() + self.other_prereqs()
         args = self.args
         for a in self.arg_types():
             out.append(args[a.key])
@@ -957,6 +974,7 @@ class MBType(object):
 
 
 class StaticResource(MBType):
+    FILE_TYPE = 'auto'
     DEFAULT_LOCATION = ''
     DESCR_LONG = (
         "Abstract base class for dependency to a static resource.\n"
@@ -1075,11 +1093,6 @@ class ExternalResource(StaticResource):
         out = os.path.abspath(path) == os.path.abspath(cls.infer_paths()[0])
         return out
 
-    def body_args(self):
-        out = self.static_prereqs()
-
-        return out
-
 
 class Repo(ExternalResource):
     URL = ''
@@ -1109,7 +1122,7 @@ class Repo(ExternalResource):
         if self.git_url():
             return 'git clone %s %s' % (self.git_url(), self.path)
 
-        def out():
+        def out(*args):
             warn_str = (
                 '%s does not exist at the default path (%s),\n'
                 'but it is not publicly available and cannot be downloaded automatically.'
