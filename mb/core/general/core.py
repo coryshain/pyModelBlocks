@@ -274,13 +274,13 @@ def other_prereq_type_err_msg(i, j):
     return 'Index %d must be < the number of other prereqs (%d)' % (i, j)
 
 
-def add_doc(cls, indent=0, indent_size=4):
+def generate_doc(cls, indent=0, indent_size=4):
     out = ''
     for s in cls.descr_long().split('\n'):
         out += ' ' * (indent) + s + '\n'
     out += '\n'
     if hasattr(cls, 'URL') and cls.url() is not None:
-        out += '**URL**: `%s <%s>` _\n\n' % (cls.url(), cls.url())
+        out += '**URL**: `%s <%s>`_\n\n' % (cls.url(), cls.url())
     external_resources = [x for x in cls.static_prereq_types() if not isinstance(x, str) and issubclass(x, ExternalResource)]
     if len(external_resources) > 0:
         out += ' ' * indent + '**External resources**:\n\n'
@@ -289,7 +289,7 @@ def add_doc(cls, indent=0, indent_size=4):
                 name = x
             else:
                 name = x.infer_paths()[0]
-            out += ' ' * (indent) + '``- %s``\n' % name
+            out += ' ' * (indent) + '- ``%s``\n\n' % name
     prereqs = cls.pattern_prereq_types() + cls.static_prereq_types() + cls.other_prereq_paths(None)
     if len(prereqs) > 0:
         out += '**Prerequisites**:\n\n'
@@ -303,16 +303,16 @@ def add_doc(cls, indent=0, indent_size=4):
                     name = x.__name__
                 else:
                     name = x.syntax_str()
-            out += '`- `%s``' % name
+            out += '- ``%s``' % name
             if i == 0 and cls.repeatable_prereq():
                 out += ' (repeatable)'
-            out += '\n'
+            out += '\n\n'
     if not cls.is_abstract():
         out += ' ' * indent + '**Syntax**:\n\n'
         out += ' ' * (indent) + '``%s``' % cls.syntax_str()
     out += '\n\n'
 
-    cls.__doc__ = out
+    return out
 
 
 
@@ -328,7 +328,7 @@ def add_doc(cls, indent=0, indent_size=4):
 class typemb(type):
     def __new__(meta, name, bases, dct):
         cls = super(typemb, meta).__new__(meta, name, bases, dct)
-        add_doc(cls)
+        cls.__doc__ = generate_doc(cls)
 
         return cls
 
@@ -344,6 +344,8 @@ class typemb(type):
 
 
 class MBType(object, metaclass=typemb):
+    __metaclass__ = typemb
+    
     SUFFIX = ''
     MANIP = ''
     PATTERN_PREREQ_TYPES = []
