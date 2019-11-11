@@ -8,6 +8,8 @@ Welcome to pyModelBlocks!!
    :maxdepth: 2
    :caption: Contents:
 
+    mb
+
 Indices and tables
 ==================
 * :ref:`genindex`
