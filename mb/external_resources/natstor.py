@@ -1,4 +1,4 @@
-from mb.core.general.tables import *
+from mb.core.general.table import *
 from mb.util.toks2sents import toks2sents
 from mb.util.sents2sentids import sents2sentids
 from mb.util.tabular import rt2timestamps
@@ -221,7 +221,7 @@ class ItemMeasuresNatstor(ItemMeasures):
 
 class ItemMeasuresNatstorTime(ItemMeasures):
     MANIP = 'naturalstories.t'
-    PATTERN_PREREQ_TYPES = [ItemMeasuresNatstor]
+    STEM_PREREQ_TYPES = [ItemMeasuresNatstor]
     STATIC_PREREQ_TYPES = [NatstorAudioSource]
     DESCR = 'naturalstories time itemmeasures'
     DESCR_LONG = 'Natural Stories timestamp itemmeasures'

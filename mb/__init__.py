@@ -2,7 +2,10 @@ from mb.util.general import *
 
 from mb.core.general.core import *
 from mb.core.general.text import *
-from mb.core.general.tables import *
+from mb.core.general.table import *
+from mb.core.general.tree import *
+
+from mb.core.parsing.core import *
 
 from mb.core.regression import *
 from mb.core.regression.lmer import *

@@ -1,4 +1,4 @@
-from .text import *
+from .tree import *
 from mb.util.tabular import roll_toks, augment_cols, merge_tables, censor, partition
 
 
@@ -76,7 +76,7 @@ class ResMeasures(MBType):
 
 class TokMeasuresDLT(TokMeasures):
     MANIP = '.dlt'
-    PATTERN_PREREQ_TYPES = [GoldLineTrees]
+    STEM_PREREQ_TYPES = [GoldLineTrees]
     STATIC_PREREQ_TYPES = ['scripts/dlt.py']
     DESCR = 'DLT measures'
     DESCR_LONG = 'Compute DLT (integration cost) measures from linetrees'
@@ -87,7 +87,7 @@ class TokMeasuresDLT(TokMeasures):
 
     def body(self):
         out = "cat %s | python3 -m mb.static_resources.scripts.dlt > %s" % (
-            self.pattern_prereqs()[0].path,
+            self.stem_prereqs()[0].path,
             self.path
         )
 
@@ -105,7 +105,7 @@ class TokMeasuresDLT(TokMeasures):
 
 
 class ItemmeasuresRolled(ItemMeasures):
-    PATTERN_PREREQ_TYPES = [TokMeasures]
+    STEM_PREREQ_TYPES = [TokMeasures]
     DESCR_SHORT = 'rolled itemmeasures'
     DESCR_LONG = 'Itemmeasures rolled from tokmeasures'
 
@@ -133,7 +133,7 @@ class ItemmeasuresRolled(ItemMeasures):
 
 class ItemmeasuresConcat(ItemMeasures):
     MANIP = '.concat'
-    PATTERN_PREREQ_TYPES = [ItemMeasures]
+    STEM_PREREQ_TYPES = [ItemMeasures]
     REPEATABLE_PREREQ = True
     DESCR_SHORT = 'concatenated itemmeasures'
     DESCR_LONG = 'Itemmeasures from (column) concatenation of tables'
@@ -198,7 +198,7 @@ class ItemmeasuresConcat(ItemMeasures):
 
 
 class EvMeasuresMerged(EvMeasures):
-    PATTERN_PREREQ_TYPES = [ItemMeasures]
+    STEM_PREREQ_TYPES = [ItemMeasures]
     DESCR_SHORT = 'merged evmeasures'
     DESCR_LONG = 'Merge of evmeasures with itemmeasures'
 
@@ -249,7 +249,7 @@ class EvMeasuresMerged(EvMeasures):
 
 
 class ResMeasuresReg(ResMeasures):
-    PATTERN_PREREQ_TYPES = [EvMeasures]
+    STEM_PREREQ_TYPES = [EvMeasures]
     ARG_TYPES = [
         Arg(
             'cens_params_file',

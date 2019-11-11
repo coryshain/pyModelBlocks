@@ -115,7 +115,7 @@ class PredictionLMER(Prediction):
 
 
 class SignifLRT(Signif):
-    PATTERN_PREREQ_TYPES = [PredictionLMER]
+    STEM_PREREQ_TYPES = [PredictionLMER]
     SIGNIF_TYPE = 'lrt'
     DESCR_SHORT = 'LRT signif'
     DESCR_LONG = "Likelihood ratio significance test(s). Only available for LMER models."

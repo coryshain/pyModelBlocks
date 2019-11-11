@@ -251,14 +251,14 @@ def prereq_comparator(x, y):
     elif isinstance(y, str):
         out = -1
     else:
-        if x.has_suffix and not y.has_suffix:
+        if x.has_shared_suffix and not y.has_shared_suffix:
             out = 1
-        elif y.has_suffix and not x.has_suffix:
+        elif y.has_shared_suffix and not x.has_shared_suffix:
             out = -1
         else:
-            if x.has_prefix and not y.has_prefix:
+            if x.has_shared_prefix and not y.has_shared_prefix:
                 out = 1
-            elif y.has_prefix and not x.has_prefix:
+            elif y.has_shared_prefix and not x.has_shared_prefix:
                 out = -1
             else:
                 if len(x.stem) < len(y.stem):
@@ -290,7 +290,7 @@ def generate_doc(cls, indent=0, indent_size=4):
             else:
                 name = x.infer_paths()[0]
             out += ' ' * (indent) + '- ``%s``\n\n' % name
-    prereqs = cls.pattern_prereq_types() + cls.static_prereq_types() + cls.other_prereq_paths(None)
+    prereqs = cls.stem_prereq_types() + cls.static_prereq_types() + cls.other_prereq_paths(None)
     if len(prereqs) > 0:
         out += '**Prerequisites**:\n\n'
         for i, x in enumerate(prereqs):
@@ -348,7 +348,7 @@ class MBType(object, metaclass=typemb):
     
     SUFFIX = ''
     MANIP = ''
-    PATTERN_PREREQ_TYPES = []
+    STEM_PREREQ_TYPES = []
     STATIC_PREREQ_TYPES = []
     ARG_TYPES = []
     CONFIG_KEYS = []
@@ -358,8 +358,8 @@ class MBType(object, metaclass=typemb):
 
     REPEATABLE_PREREQ = False
 
-    HAS_PREFIX = False
-    HAS_SUFFIX = False
+    ALLOW_SHARED_PREFIX = True
+    ALLOW_SHARED_SUFFIX = True
 
     DESCR_SHORT = 'data'
     DESCR_LONG = (
@@ -376,16 +376,16 @@ class MBType(object, metaclass=typemb):
         self.stem = self.strip_suffix(self.basename)
         self.path = os.path.join(self.directory, self.basename + self.suffix())
 
-        self.pattern_prereqs_all_paths_src = []
-        self.pattern_prereqs_src = []
+        self.stem_prereqs_all_paths_src = []
+        self.stem_prereqs_src = []
         self.static_prereqs_all_paths_src = []
         self.static_prereqs_src = []
         self.other_prereqs_all_paths_src = []
         self.other_prereqs_src = []
         self.dependents = set()
 
-        self.has_prefix_src = False
-        self.has_suffix_src = False
+        self.has_shared_prefix_src = False
+        self.has_shared_suffix_src = False
 
         self.data = None
 
@@ -412,7 +412,7 @@ class MBType(object, metaclass=typemb):
                 break
 
         if max_timestamp < np.inf:
-            for s in self.pattern_prereqs_src + self.static_prereqs_src + self.other_prereqs_src:
+            for s in self.stem_prereqs_src + self.static_prereqs_src + self.other_prereqs_src:
                 max_timestamp = max(max_timestamp, s.max_timestamp)
 
         if max_timestamp == self.timestamp == -np.inf:
@@ -425,19 +425,19 @@ class MBType(object, metaclass=typemb):
 
     @property
     def graph_key(self):
-        return type(self), self.path, self.has_prefix, self.has_suffix
+        return type(self), self.path, self.has_shared_prefix, self.has_shared_suffix
 
     @property
-    def has_prefix(self):
-        return self.has_prefix_src
+    def has_shared_prefix(self):
+        return self.has_shared_prefix_src
 
     @property
-    def has_suffix(self):
-        return self.has_suffix_src
+    def has_shared_suffix(self):
+        return self.has_shared_suffix_src
 
     @property
     def args(self):
-        args = self.parse_path(self.path, has_prefix=self.has_prefix, has_suffix=self.has_suffix)
+        args = self.parse_path(self.path, has_shared_prefix=self.has_shared_prefix, has_shared_suffix=self.has_shared_suffix)
 
         if args is not None:
             if 'basename' in args:
@@ -462,16 +462,16 @@ class MBType(object, metaclass=typemb):
         return cls.MANIP
 
     @classmethod
-    def pattern_prereq_types(cls):
-        return cls.PATTERN_PREREQ_TYPES
+    def stem_prereq_types(cls):
+        return cls.STEM_PREREQ_TYPES
     
     @classmethod
     def augment_prereq(cls, i, path):
         return ''
 
     @classmethod
-    def has_multiple_pattern_prereqs(cls):
-        return len(cls.pattern_prereq_types()) > 1 or (len(cls.pattern_prereq_types()) == 1 and cls.repeatable_prereq())
+    def has_multiple_stem_prereqs(cls):
+        return len(cls.stem_prereq_types()) > 1 or (len(cls.stem_prereq_types()) == 1 and cls.repeatable_prereq())
 
     @classmethod
     def static_prereq_types(cls):
@@ -496,6 +496,14 @@ class MBType(object, metaclass=typemb):
     @classmethod
     def repeatable_prereq(cls):
         return cls.REPEATABLE_PREREQ
+
+    @classmethod
+    def allow_shared_prefix(cls):
+        return cls.ALLOW_SHARED_PREFIX
+
+    @classmethod
+    def allow_shared_suffix(cls):
+        return cls.ALLOW_SHARED_SUFFIX
 
     @classmethod
     def arg_types(cls):
@@ -614,7 +622,7 @@ class MBType(object, metaclass=typemb):
             suffix = cls.manip() + cls.suffix()
             out = path.endswith(suffix)
             if out:
-                prereq_types = cls.pattern_prereq_types()
+                prereq_types = cls.stem_prereq_types()
                 if len(prereq_types) == 0:
                     out = len(os.path.basename(path)) == len(suffix)
                 elif len(prereq_types) > 1 or cls.repeatable_prereq():
@@ -673,37 +681,38 @@ class MBType(object, metaclass=typemb):
         return out
 
     @classmethod
-    def parse_path(cls, path, has_prefix=False, has_suffix=False):
+    def parse_path(cls, path, has_shared_prefix=False, has_shared_suffix=False):
         out = None
         path = os.path.normpath(path)
         if cls.match(path):
             out = cls.parse_args(path)
             out['prereqs'] = []
             prereqs = []
-            if cls.has_multiple_pattern_prereqs():
+            if cls.has_multiple_stem_prereqs():
                 basename = out['basename']
                 directory = os.path.dirname(basename)
                 basename = os.path.basename(basename)
                 basenames = basename.split(DELIM[0])
-                if has_prefix:
-                    prefix = decrement_delimiters(basenames[0])
+                if has_shared_prefix:
+                    shared_prefix = decrement_delimiters(basenames[0])
                     basenames = basenames[1:]
                 else:
-                    prefix = ''
-                if len(basenames) < len(cls.pattern_prereq_types()):
+                    shared_prefix = ''
+                if len(basenames) < len(cls.stem_prereq_types()):
                     out = None
                 else:
-                    if has_suffix:
-                        suffix = decrement_delimiters(basenames[-1])
+                    if has_shared_suffix:
+                        shared_suffix = decrement_delimiters(basenames[-1])
                         basenames = basenames[:-1]
                     else:
-                        suffix = ''
-                    if len(basenames) < len(cls.pattern_prereq_types()):
+                        shared_suffix = ''
+                    if len(basenames) < len(cls.stem_prereq_types()):
                         out = None
                     else:
                         basenames = [os.path.join(directory, DELIM[0].join(
-                            [y for y in (prefix, decrement_delimiters(x), suffix) if y != ''])) for x in basenames]
-                        prereq_types = cls.pattern_prereq_types()[:]
+                            [y for y in (shared_prefix, decrement_delimiters(x), shared_suffix) if y != '']
+                        )) for x in basenames]
+                        prereq_types = cls.stem_prereq_types()[:]
                         if cls.repeatable_prereq():
                             while len(prereq_types) < len(basenames):
                                 prereq_types.insert(0, prereq_types[0])
@@ -713,16 +722,16 @@ class MBType(object, metaclass=typemb):
                             prereq_path += p.suffix()
                             prereqs.append(prereq_path)
                         out['prereqs'] = prereqs
-            elif len(cls.pattern_prereq_types()) == 1:
+            elif len(cls.stem_prereq_types()) == 1:
                 prereq_path = out['basename']
                 prereq_path += cls.augment_prereq(0, path)
-                prereq_path += cls.pattern_prereq_types()[0].suffix()
+                prereq_path += cls.stem_prereq_types()[0].suffix()
                 prereqs.append(prereq_path)
                 out['prereqs'] = prereqs
 
             if out is not None:
-                out['has_prefix'] = has_prefix
-                out['has_suffix'] = has_suffix
+                out['has_shared_prefix'] = has_shared_prefix
+                out['has_shared_suffix'] = has_shared_suffix
 
         return out
 
@@ -732,17 +741,17 @@ class MBType(object, metaclass=typemb):
             out = cls.infer_paths()[0]
         else:
             out = []
-            if cls.has_multiple_pattern_prereqs():
-                out.append('(<PREFIX>)')
-            for i, x in enumerate(cls.pattern_prereq_types()):
+            if cls.has_multiple_stem_prereqs() and cls.allow_shared_prefix():
+                out.append('(<SHARED_PRE>)')
+            for i, x in enumerate(cls.stem_prereq_types()):
                 name = x.__name__
                 if i == 0 and cls.repeatable_prereq():
-                    s = '<%s>(.<%s>)+' % (name, name)
+                    s = '<%s>(.<%s>)*' % (name, name)
                 else:
                     s = '<%s>' % name
                 out.append(s)
-            if cls.has_multiple_pattern_prereqs():
-                out.append('(<SUFFIX>)')
+            if cls.has_multiple_stem_prereqs() and cls.allow_shared_suffix():
+                out.append('(<SHARED_POST>)')
             out = '(<DIR>/)' + DELIM[0].join(out)
             if len(cls.arg_types()) > 0:
                 out += DELIM[0]
@@ -753,11 +762,11 @@ class MBType(object, metaclass=typemb):
 
         return out
 
-    def pattern_prereqs_all_paths(self):
-        return self.pattern_prereqs_all_paths_src
+    def stem_prereqs_all_paths(self):
+        return self.stem_prereqs_all_paths_src
 
-    def pattern_prereqs(self):
-        return self.pattern_prereqs_src
+    def stem_prereqs(self):
+        return self.stem_prereqs_src
 
     def other_prereqs_all_paths(self):
         return self.other_prereqs_all_paths_src
@@ -780,7 +789,7 @@ class MBType(object, metaclass=typemb):
         raise NotImplementedError
 
     def body_args(self):
-        out = self.pattern_prereqs() + self.static_prereqs() + self.other_prereqs()
+        out = self.stem_prereqs() + self.static_prereqs() + self.other_prereqs()
         args = self.args
         for a in self.arg_types():
             out.append(args[a.key])
@@ -793,7 +802,7 @@ class MBType(object, metaclass=typemb):
         build = force or (self.max_timestamp > self.timestamp)
 
         if build:
-            for s in self.pattern_prereqs() + self.other_prereqs():
+            for s in self.stem_prereqs() + self.other_prereqs():
                 garbage |= s.get_garbage(force=force)
 
             if self.intermediate and self.dump and not self.precious():
@@ -805,7 +814,7 @@ class MBType(object, metaclass=typemb):
         stale_nodes = set()
         if force or (self.max_timestamp > self.timestamp):
             stale_nodes.add(self.graph_key)
-            for p in self.pattern_prereqs() + self.static_prereqs() + self.other_prereqs():
+            for p in self.stem_prereqs() + self.static_prereqs() + self.other_prereqs():
                 stale_nodes |= p.get_stale_nodes(force=force)
     
         return stale_nodes
@@ -918,18 +927,18 @@ class MBType(object, metaclass=typemb):
         return data
 
     def update_history(self):
-        for x in self.static_prereqs_src + self.pattern_prereqs() + self.other_prereqs():
+        for x in self.static_prereqs_src + self.stem_prereqs() + self.other_prereqs():
             x.update_history()
         for k, _, v in self.config_values():
             HISTORY_SETTINGS[k] = v
 
-    def set_pattern_prereqs(self, prereqs):
-        self.pattern_prereqs_all_paths_src = prereqs
+    def set_stem_prereqs(self, prereqs):
+        self.stem_prereqs_all_paths_src = prereqs
 
-        # assert self.pattern_prereqs_all_paths_src is not None, 'No recipe to make %s' % self.path
+        # assert self.stem_prereqs_all_paths_src is not None, 'No recipe to make %s' % self.path
         prereqs = []
-        if self.pattern_prereqs_all_paths_src is not None:
-            for p in self.pattern_prereqs_all_paths_src:
+        if self.stem_prereqs_all_paths_src is not None:
+            for p in self.stem_prereqs_all_paths_src:
                 # Update dependents
                 for _p in p:
                     if issubclass(_p.__class__, MBType):
@@ -942,7 +951,7 @@ class MBType(object, metaclass=typemb):
                 else:
                     prereqs.append(None)
 
-        self.pattern_prereqs_src = prereqs
+        self.stem_prereqs_src = prereqs
 
     def set_static_prereqs(self, prereqs):
         self.static_prereqs_all_paths_src = prereqs
@@ -984,7 +993,7 @@ class MBType(object, metaclass=typemb):
             dump = True
             self.dump = dump
         if dump:
-            for p in self.pattern_prereqs_all_paths_src:
+            for p in self.stem_prereqs_all_paths_src:
                 for q in p:
                     q.dump = True
             for q in self.static_prereqs_src:
@@ -1002,7 +1011,7 @@ class MBType(object, metaclass=typemb):
         if build:
             if self.dump and len(self.directory) > 0 and not os.path.exists(self.directory):
                 out.add(self.directory)
-            for p in self.pattern_prereqs() + self.static_prereqs() + self.other_prereqs():
+            for p in self.stem_prereqs() + self.static_prereqs() + self.other_prereqs():
                 out |= p.directories_to_make(force=force)
         return out
 
@@ -1200,7 +1209,7 @@ class ParamFile(MBType):
         return out
 
     @classmethod
-    def parse_path(cls, path, has_prefix=False, has_suffix=False):
+    def parse_path(cls, path, has_shared_prefix=False, has_shared_suffix=False):
         out = None
         path = os.path.normpath(path)
         if cls.match(path):
@@ -1248,8 +1257,8 @@ class MBFailure(MBType):
     def cls_manip(self):
         return self.cls.manip()
 
-    def cls_pattern_prereq_types(self):
-        return self.cls.pattern_prereq_types()
+    def cls_stem_prereq_types(self):
+        return self.cls.stem_prereq_types()
 
     def cls_static_prereq_types(self):
         return self.cls.static_prereq_types()
@@ -1388,37 +1397,45 @@ class Graph(object):
 
             for c in inheritors:
                 if not c.is_abstract():
-                    if c.has_multiple_pattern_prereqs():
-                        parse_settings = list(itertools.product([False, True], [False, True]))
+                    if c.has_multiple_stem_prereqs():
+                        parse_settings = []
+                        if c.allow_shared_prefix():
+                            parse_settings.append((False, True))
+                        else:
+                            parse_settings.append((False,))
+                        if c.allow_shared_suffix():
+                            parse_settings.append((False, True))
+                        else:
+                            parse_settings.append((False,))
+                        parse_settings = list(itertools.product(*parse_settings))
                     else:
                         parse_settings = [(False, False)]
 
-                    for parse_setting in parse_settings:
-                        has_prefix_cur, has_suffix_cur = parse_setting
+                    for has_shared_prefix_cur, has_shared_suffix_cur in parse_settings:
                         subgraph = self.build_subgraph(
                             c,
                             target_path,
-                            has_prefix=has_prefix_cur,
-                            has_suffix=has_suffix_cur
+                            has_shared_prefix=has_shared_prefix_cur,
+                            has_shared_suffix=has_shared_suffix_cur
                         )
-                        pat = subgraph['pattern_prereqs_all_paths']
+                        stem = subgraph['stem_prereqs_all_paths']
                         stat = subgraph['static_prereqs_all_paths']
                         oth = subgraph['other_prereqs_all_paths']
                         success_ratio_cur = subgraph['success_ratio']
                         match_cur = subgraph['match']
 
                         if success_ratio_cur == 1:
-                            p = self[(c, target_path, has_prefix_cur, has_suffix_cur)]
+                            p = self[(c, target_path, has_shared_prefix_cur, has_shared_suffix_cur)]
                             if p is None:
                                 if issubclass(c, ExternalResource):
                                     p = c()
                                 else:
                                     p = c(target_path)
-                                p.set_pattern_prereqs(pat)
+                                p.set_stem_prereqs(stem)
                                 p.set_static_prereqs(stat)
                                 p.set_other_prereqs(oth)
-                                p.has_prefix_src = has_prefix_cur
-                                p.has_suffix_src = has_suffix_cur
+                                p.has_shared_prefix_src = has_shared_prefix_cur
+                                p.has_shared_suffix_src = has_shared_suffix_cur
                                 self.add_node(p)
 
                             p.dump = True
@@ -1427,11 +1444,11 @@ class Graph(object):
                             successes.add(p)
                         elif match_cur:
                             p = MBFailure(target_path, c)
-                            p.set_pattern_prereqs(pat)
+                            p.set_stem_prereqs(stem)
                             p.set_static_prereqs(stat)
                             p.set_other_prereqs(oth)
-                            p.has_prefix_src = has_prefix_cur
-                            p.has_suffix_src = has_suffix_cur
+                            p.has_shared_prefix_src = has_shared_prefix_cur
+                            p.has_shared_suffix_src = has_shared_suffix_cur
                             failures.add(p)
 
             if len(successes) > 0:
@@ -1469,15 +1486,15 @@ class Graph(object):
         self.failed_target_paths = failed_target_paths
 
 
-    def build_subgraph(self, cls, path, has_prefix=False, has_suffix=False, downstream_paths=None):
+    def build_subgraph(self, cls, path, has_shared_prefix=False, has_shared_suffix=False, downstream_paths=None):
         if downstream_paths is None:
             downstream_paths = set()
         downstream_paths.add(path)
-        pattern_prereqs_all_paths = None
+        stem_prereqs_all_paths = None
         static_prereqs_all_paths = None
         other_prereqs_all_paths = None
 
-        parsed = cls.parse_path(path, has_prefix=has_prefix, has_suffix=has_suffix)
+        parsed = cls.parse_path(path, has_shared_prefix=has_shared_prefix, has_shared_suffix=has_shared_suffix)
         if parsed is not None:
             # STATIC PREREQS
             static_prereq_types = cls.static_prereq_types()[:]
@@ -1500,7 +1517,7 @@ class Graph(object):
                         prereq_path,
                         downstream_paths=downstream_paths.copy()
                     )
-                    pat = subgraph['pattern_prereqs_all_paths']
+                    pat = subgraph['stem_prereqs_all_paths']
                     stat = subgraph['static_prereqs_all_paths']
                     oth = subgraph['other_prereqs_all_paths']
                     success_ratio_cur = subgraph['success_ratio']
@@ -1513,7 +1530,7 @@ class Graph(object):
                                 p = c()
                             else:
                                 p = c(prereq_path)
-                            p.set_pattern_prereqs(pat)
+                            p.set_stem_prereqs(pat)
                             p.set_static_prereqs(stat)
                             p.set_other_prereqs(oth)
                             self.add_node(p)
@@ -1521,7 +1538,7 @@ class Graph(object):
                         successes.add(p)
                     elif match_cur:
                         p = MBFailure(prereq_path, c)
-                        p.set_pattern_prereqs(pat)
+                        p.set_stem_prereqs(pat)
                         p.set_static_prereqs(stat)
                         p.set_other_prereqs(oth)
                         failures.add(p)
@@ -1542,17 +1559,17 @@ class Graph(object):
 
                 static_prereqs_all_paths.append(to_append)
 
-            has_buildable_prereqs = (len(cls.pattern_prereq_types()) > 0) or (len(cls.other_prereq_paths(path)) > 0)
+            has_buildable_prereqs = (len(cls.stem_prereq_types()) > 0) or (len(cls.other_prereq_paths(path)) > 0)
 
             if has_buildable_prereqs:
                 # PATTERN PREREQS
-                pattern_prereq_types = cls.pattern_prereq_types()[:]
+                stem_prereq_types = cls.stem_prereq_types()[:]
                 if cls.repeatable_prereq():
-                    while len(pattern_prereq_types) < len(parsed['prereqs']):
-                        pattern_prereq_types.insert(0, pattern_prereq_types[0])
+                    while len(stem_prereq_types) < len(parsed['prereqs']):
+                        stem_prereq_types.insert(0, stem_prereq_types[0])
     
-                pattern_prereqs_all_paths = []
-                for (P, prereq_path) in zip(pattern_prereq_types, parsed['prereqs']):
+                stem_prereqs_all_paths = []
+                for (P, prereq_path) in zip(stem_prereq_types, parsed['prereqs']):
                     successes = SuccessSet()
                     failures = FailureSet()
 
@@ -1564,48 +1581,56 @@ class Graph(object):
                     if prereq_path not in downstream_paths:
                         for c in inheritors:
                             if not c.is_abstract():
-                                if c.has_multiple_pattern_prereqs():
-                                    parse_settings = list(itertools.product([False, True], [False, True]))
+                                if c.has_multiple_stem_prereqs():
+                                    parse_settings = []
+                                    if c.allow_shared_prefix():
+                                        parse_settings.append((False, True))
+                                    else:
+                                        parse_settings.append((False,))
+                                    if c.allow_shared_suffix():
+                                        parse_settings.append((False, True))
+                                    else:
+                                        parse_settings.append((False,))
+                                    parse_settings = list(itertools.product(*parse_settings))
                                 else:
                                     parse_settings = [(False, False)]
 
-                                for parse_setting in parse_settings:
-                                    has_prefix_cur, has_suffix_cur = parse_setting
+                                for has_shared_prefix_cur, has_shared_suffix_cur in parse_settings:
                                     subgraph = self.build_subgraph(
                                         c,
                                         prereq_path,
-                                        has_prefix=has_prefix_cur,
-                                        has_suffix=has_suffix_cur,
+                                        has_shared_prefix=has_shared_prefix_cur,
+                                        has_shared_suffix=has_shared_suffix_cur,
                                         downstream_paths=downstream_paths.copy()
                                     )
-                                    pat = subgraph['pattern_prereqs_all_paths']
+                                    pat = subgraph['stem_prereqs_all_paths']
                                     stat = subgraph['static_prereqs_all_paths']
                                     oth = subgraph['other_prereqs_all_paths']
                                     success_ratio_cur = subgraph['success_ratio']
                                     match_cur = subgraph['match']
 
                                     if success_ratio_cur == 1:
-                                        p = self[(c, prereq_path, has_prefix_cur, has_suffix_cur)]
+                                        p = self[(c, prereq_path, has_shared_prefix_cur, has_shared_suffix_cur)]
                                         if p is None:
                                             if issubclass(c, ExternalResource):
                                                 p = c()
                                             else:
                                                 p = c(prereq_path)
-                                            p.set_pattern_prereqs(pat)
+                                            p.set_stem_prereqs(pat)
                                             p.set_static_prereqs(stat)
                                             p.set_other_prereqs(oth)
-                                            p.has_prefix_src = has_prefix_cur
-                                            p.has_suffix_src = has_suffix_cur
+                                            p.has_shared_prefix_src = has_shared_prefix_cur
+                                            p.has_shared_suffix_src = has_shared_suffix_cur
                                             self.add_node(p)
                                         p.set_dump()
                                         successes.add(p)
                                     elif match_cur:
                                         p = MBFailure(prereq_path, c)
-                                        p.set_pattern_prereqs(pat)
+                                        p.set_stem_prereqs(pat)
                                         p.set_static_prereqs(stat)
                                         p.set_other_prereqs(oth)
-                                        p.has_prefix_src = has_prefix_cur
-                                        p.has_suffix_src = has_suffix_cur
+                                        p.has_shared_prefix_src = has_shared_prefix_cur
+                                        p.has_shared_suffix_src = has_shared_suffix_cur
                                         failures.add(p)
 
                     if len(successes) > 0:
@@ -1622,7 +1647,7 @@ class Graph(object):
                                 name = prereq_path + ' (cyclic dependency)'
                             to_append = FailureSet([name])
 
-                    pattern_prereqs_all_paths.append(to_append)
+                    stem_prereqs_all_paths.append(to_append)
     
                 # OTHER PREREQS
                 other_prereq_paths = cls.other_prereq_paths(path)
@@ -1640,48 +1665,56 @@ class Graph(object):
                     if prereq_path not in downstream_paths:
                         for c in inheritors:
                             if not c.is_abstract():
-                                if c.has_multiple_pattern_prereqs():
-                                    parse_settings = list(itertools.product([False, True], [False, True]))
+                                if c.has_multiple_stem_prereqs():
+                                    parse_settings = []
+                                    if c.allow_shared_prefix():
+                                        parse_settings.append((False, True))
+                                    else:
+                                        parse_settings.append((False,))
+                                    if c.allow_shared_suffix():
+                                        parse_settings.append((False, True))
+                                    else:
+                                        parse_settings.append((False,))
+                                    parse_settings = list(itertools.product(*parse_settings))
                                 else:
                                     parse_settings = [(False, False)]
 
-                                for parse_setting in parse_settings:
-                                    has_prefix_cur, has_suffix_cur = parse_setting
+                                for has_shared_prefix_cur, has_shared_suffix_cur in parse_settings:
                                     subgraph = self.build_subgraph(
                                         c,
                                         prereq_path,
-                                        has_prefix=has_prefix_cur,
-                                        has_suffix=has_suffix_cur,
+                                        has_shared_prefix=has_shared_prefix_cur,
+                                        has_shared_suffix=has_shared_suffix_cur,
                                         downstream_paths=downstream_paths.copy()
                                     )
-                                    pat = subgraph['pattern_prereqs_all_paths']
+                                    pat = subgraph['stem_prereqs_all_paths']
                                     stat = subgraph['static_prereqs_all_paths']
                                     oth = subgraph['other_prereqs_all_paths']
                                     success_ratio_cur = subgraph['success_ratio']
                                     match_cur = subgraph['match']
 
                                     if success_ratio_cur == 1:
-                                        p = self[(c, prereq_path, has_prefix_cur, has_suffix_cur)]
+                                        p = self[(c, prereq_path, has_shared_prefix_cur, has_shared_suffix_cur)]
                                         if p is None:
                                             if issubclass(c, ExternalResource):
                                                 p = c()
                                             else:
                                                 p = c(prereq_path)
-                                            p.set_pattern_prereqs(pat)
+                                            p.set_stem_prereqs(pat)
                                             p.set_static_prereqs(stat)
                                             p.set_other_prereqs(oth)
-                                            p.has_prefix_src = has_prefix_cur
-                                            p.has_suffix_src = has_suffix_cur
+                                            p.has_shared_prefix_src = has_shared_prefix_cur
+                                            p.has_shared_suffix_src = has_shared_suffix_cur
                                             self.add_node(p)
                                         p.set_dump()
                                         successes.add(p)
                                     elif match_cur:
                                         p = MBFailure(prereq_path, c)
-                                        p.set_pattern_prereqs(pat)
+                                        p.set_stem_prereqs(pat)
                                         p.set_static_prereqs(stat)
                                         p.set_other_prereqs(oth)
-                                        p.has_prefix_src = has_prefix_cur
-                                        p.has_suffix_src = has_suffix_cur
+                                        p.has_shared_prefix_src = has_shared_prefix_cur
+                                        p.has_shared_suffix_src = has_shared_suffix_cur
                                         failures.add(p)
 
                     if len(successes) > 0:
@@ -1700,13 +1733,13 @@ class Graph(object):
 
                     other_prereqs_all_paths.append(to_append)
             else:
-                pattern_prereqs_all_paths = []
+                stem_prereqs_all_paths = []
                 other_prereqs_all_paths = []
 
             success_ratio_num = 0
             success_ratio_denom = 0
 
-            for x in static_prereqs_all_paths + pattern_prereqs_all_paths + other_prereqs_all_paths:
+            for x in static_prereqs_all_paths + stem_prereqs_all_paths + other_prereqs_all_paths:
                 if isinstance(x, SuccessSet):
                     success_ratio_num += 1
                 success_ratio_denom += 1
@@ -1721,7 +1754,7 @@ class Graph(object):
         match = cls.match(path)
 
         return {
-            'pattern_prereqs_all_paths': pattern_prereqs_all_paths,
+            'stem_prereqs_all_paths': stem_prereqs_all_paths,
             'static_prereqs_all_paths': static_prereqs_all_paths,
             'other_prereqs_all_paths': other_prereqs_all_paths,
             'success_ratio': success_ratio,
@@ -1749,9 +1782,9 @@ class Graph(object):
                         out += ' ' * (indent + max_num_len + 10) + 'Path does not match any existing constructor\n'
                     else:
                         type_name = [y.cls.__name__]
-                        if y.has_prefix:
+                        if y.has_shared_prefix:
                             type_name.append('prefix')
-                        if y.has_suffix:
+                        if y.has_shared_suffix:
                             type_name.append('suffix')
                         type_name = ', '.join(type_name)
 
@@ -1761,14 +1794,14 @@ class Graph(object):
                         else:
                             out += ' ' * (indent) + ' ' * (max_num_len + 2) + '- FAIL: ' + y.path + ' (%s)\n' % type_name
 
-                        out += self.report_failure(y.pattern_prereqs_all_paths() + y.other_prereqs_all_paths(), indent=indent+num_pad+4)
+                        out += self.report_failure(y.stem_prereqs_all_paths() + y.other_prereqs_all_paths(), indent=indent + num_pad + 4)
             elif isinstance(x, SuccessSet):
                 if len(x) > 0:
                     for j, y in enumerate(x):
                         type_name = [y.__class__.__name__]
-                        if y.has_prefix:
+                        if y.has_shared_prefix:
                             type_name.append('prefix')
-                        if y.has_suffix:
+                        if y.has_shared_suffix:
                             type_name.append('suffix')
                         type_name = ', '.join(type_name)
 
@@ -1859,7 +1892,7 @@ class Graph(object):
             for n in list(stale_nodes):
                 source = True
                 node = self[n]
-                for p in node.pattern_prereqs() + node.static_prereqs() + node.other_prereqs():
+                for p in node.stem_prereqs() + node.static_prereqs() + node.other_prereqs():
                     if p.graph_key in stale_nodes:
                         source = False
                         break

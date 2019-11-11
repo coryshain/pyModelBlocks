@@ -1,4 +1,4 @@
-from mb.core.general.tables import *
+from mb.core.general.table import *
 
 
 #####################################
@@ -40,7 +40,7 @@ class SignifExecutable(MBType):
 
 class Regression(MBType):
     SUFFIX = DELIM[0] + 'reg'
-    PATTERN_PREREQ_TYPES = [EvMeasures]
+    STEM_PREREQ_TYPES = [EvMeasures]
     ARG_TYPES = [
         Arg(
             'cens_params_file',
@@ -134,7 +134,7 @@ class Regression(MBType):
     def body(self):
         preds = self.args['predictors'].split(DELIM[2])
 
-        evmeasures = self.pattern_prereqs()[0]
+        evmeasures = self.stem_prereqs()[0]
         executable, resmeasures, config = self.other_prereqs()
 
         out = '%s %s %s %s %s %s  >  %s  2>  %s' % (
@@ -153,7 +153,7 @@ class Regression(MBType):
 
 class Prediction(MBType):
     SUFFIX = DELIM[0] + 'pred'
-    PATTERN_PREREQ_TYPES = [Regression]
+    STEM_PREREQ_TYPES = [Regression]
     ARG_TYPES = [
         Arg(
             'cens_params_file',
@@ -270,7 +270,7 @@ class Prediction(MBType):
         raise TypeError(other_prereq_type_err_msg(i, 3))
 
     def body(self):
-        reg = self.pattern_prereqs()[0]
+        reg = self.stem_prereqs()[0]
         executable, evmeasures, resmeasures = self.other_prereqs()
 
         out = '%s %s %s %s  >  %s  2>  %s' % (
@@ -287,7 +287,7 @@ class Prediction(MBType):
 
 class Signif(MBType):
     SUFFIX = DELIM[0] + 'sig'
-    PATTERN_PREREQ_TYPES = [Prediction]
+    STEM_PREREQ_TYPES = [Prediction]
     ARG_TYPES = [
         Arg(
             'cens_params_file',
@@ -424,7 +424,7 @@ class Signif(MBType):
     def body(self):
         other_prereqs = self.other_prereqs()
         executable = other_prereqs[0]
-        preds = other_prereqs[1:] + self.pattern_prereqs()
+        preds = other_prereqs[1:] + self.stem_prereqs()
 
         out = '%s %s  >  %s  2>  %s' % (
             executable.path,
@@ -472,7 +472,7 @@ class SignifExecutablePT(SignifExecutable):
 
 
 class SignifLRT(Signif):
-    PATTERN_PREREQ_TYPES = [Prediction]
+    STEM_PREREQ_TYPES = [Prediction]
     SIGNIF_TYPE = 'pt'
     DESCR_SHORT = 'PT signif'
     DESCR_LONG = "Permutation test (PT).\n"

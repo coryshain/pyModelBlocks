@@ -1,4 +1,4 @@
-from mb.core.general.text import *
+from mb.core.general.tree import *
 
 
 #####################################
@@ -67,6 +67,8 @@ def create_classes_from_ptb_dir(directory, name='WSJ'):
 class PTBSection(ExternalResource):
     CORPUS = ''
     SECTION = ''
+    DESCR_SHORT = 'PTB source section'
+    DESCR_LONG = 'Section of the Penn Treebank (PTB) parse source'
 
     @classmethod
     def corpus(cls):
@@ -84,6 +86,8 @@ class PTBSection(ExternalResource):
 class LineTreesPTB(LineTrees):
     CORPUS = ''
     SECTION = ''
+    DESCR_SHORT = 'PTB linetrees'
+    DESCR_LONG = 'Linetrees from a section of the Penn Treebank (PTB)'
 
     @classmethod
     def corpus(cls):
