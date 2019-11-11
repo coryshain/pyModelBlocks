@@ -275,7 +275,6 @@ def other_prereq_type_err_msg(i, j):
 
 
 def add_doc(cls, indent=0, indent_size=4):
-    # out = '-' * 50 + '\n'
     out = ''
     for s in cls.descr_long().split('\n'):
         out += ' ' * (indent) + s + '\n'
@@ -284,18 +283,17 @@ def add_doc(cls, indent=0, indent_size=4):
         out += '**URL**: `%s <%s>` _\n\n' % (cls.url(), cls.url())
     external_resources = [x for x in cls.static_prereq_types() if not isinstance(x, str) and issubclass(x, ExternalResource)]
     if len(external_resources) > 0:
-        out += ' ' * indent + 'External resources:\n\n'
+        out += ' ' * indent + '**External resources**:\n\n'
         for x in external_resources:
             if isinstance(x, str):
                 name = x
             else:
                 name = x.infer_paths()[0]
-            out += ' ' * (indent) + '``%s``\n' % name
+            out += ' ' * (indent) + '``- %s``\n' % name
     prereqs = cls.pattern_prereq_types() + cls.static_prereq_types() + cls.other_prereq_paths(None)
     if len(prereqs) > 0:
         out += '**Prerequisites**:\n\n'
         for i, x in enumerate(prereqs):
-            out_cur = ' ' * (indent + indent_size) + '-'
             if isinstance(x, str):
                 name = x
             elif hasattr(x, 'infer_paths'):
@@ -305,8 +303,7 @@ def add_doc(cls, indent=0, indent_size=4):
                     name = x.__name__
                 else:
                     name = x.syntax_str()
-            out_cur += '``%s``' % name
-            out += out_cur
+            out += '`- `%s``' % name
             if i == 0 and cls.repeatable_prereq():
                 out += ' (repeatable)'
             out += '\n'
