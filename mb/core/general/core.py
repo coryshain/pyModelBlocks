@@ -278,12 +278,12 @@ def add_doc(cls, indent=0, indent_size=4):
     # out = '-' * 50 + '\n'
     out = ''
     for s in cls.descr_long().split('\n'):
-        out += ' ' * (indent) + s + '\n'
+        out += ' ' * (indent) + s + '\n\n'
     if hasattr(cls, 'URL') and cls.url() is not None:
         out += '**URL**: [%s](%s)\n' % (cls.url(), cls.url())
     external_resources = [x for x in cls.static_prereq_types() if not isinstance(x, str) and issubclass(x, ExternalResource)]
     if len(external_resources) > 0:
-        out += ' ' * indent + 'External resources:\n'
+        out += ' ' * indent + 'External resources:\n\n'
         for x in external_resources:
             if isinstance(x, str):
                 name = x
@@ -292,7 +292,7 @@ def add_doc(cls, indent=0, indent_size=4):
             out += ' ' * (indent) + '``%s``\n' % name
     prereqs = cls.pattern_prereq_types() + cls.static_prereq_types() + cls.other_prereq_paths(None)
     if len(prereqs) > 0:
-        out += '**Prerequisites**:\n'
+        out += '**Prerequisites**:\n\n'
         for i, x in enumerate(prereqs):
             if isinstance(x, str):
                 name = x
@@ -303,9 +303,9 @@ def add_doc(cls, indent=0, indent_size=4):
             out += ' ' * (indent) + '``%s``' % name
             if i == 0 and cls.repeatable_prereq():
                 out += ' (repeatable)'
-            out += '\n'
+            out += '\n\n'
     if not cls.is_abstract():
-        out += ' ' * indent + '**Syntax**:\n'
+        out += ' ' * indent + '**Syntax**:\n\n'
         out += ' ' * (indent) + '``%s``' % cls.syntax_str()
     out += '\n\n'
 
