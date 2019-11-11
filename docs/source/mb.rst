@@ -25,3 +25,45 @@ mb\.core\.general\.text module
 .. automodule:: mb.core.general.text
     :members:
     :show-inheritance:
+
+mb\.core\.regression\.regression module
+-------------------
+
+.. automodule:: mb.core.general.core
+    :members:
+    :show-inheritance:
+
+mb\.core\.regression\.lmer module
+-------------------
+
+.. automodule:: mb.core.general.tables
+    :members:
+    :show-inheritance:
+
+mb\.core\.regression\.regression module
+-------------------
+
+.. automodule:: mb.core.general.text
+    :members:
+    :show-inheritance:
+
+mb\.core\.external_resources\.cdr module
+-------------------
+
+.. automodule:: mb.core.general.core
+    :members:
+    :show-inheritance:
+
+mb\.core\.external_resources\.natstor module
+-------------------
+
+.. automodule:: mb.core.general.tables
+    :members:
+    :show-inheritance:
+
+mb\.core\.external_resources\.ptb module
+-------------------
+
+.. automodule:: mb.core.general.text
+    :members:
+    :show-inheritance:
