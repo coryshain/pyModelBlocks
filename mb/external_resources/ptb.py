@@ -10,47 +10,48 @@ from mb.core.general.text import *
 
 def create_classes_from_ptb_dir(directory, name='WSJ'):
     out = []
-    for sect in sorted(os.listdir(directory)):
-        DEFAULT_LOCATION = os.path.join(directory, sect)
-        descr = '%s section %s (source)' % (name, sect)
-        src_class_name = '%sSection%sSrc' % (name, sect)
+    if os.path.exists(directory):
+        for sect in sorted(os.listdir(directory)):
+            DEFAULT_LOCATION = os.path.join(directory, sect)
+            descr = '%s section %s (source)' % (name, sect)
+            src_class_name = '%sSection%sSrc' % (name, sect)
 
-        attr_dict = {
-            'PARENT_RESOURCE': PennTreebankRepo,
-            'DEFAULT_LOCATION': DEFAULT_LOCATION,
-            'CORPUS': name.lower(),
-            'SECTION': sect,
-            'DESCR_SHORT': descr,
-            'DESCR_LONG': descr,
-        }
-        new_class = type(src_class_name, (PTBSection,), attr_dict)
-        globals()[src_class_name] = new_class
+            attr_dict = {
+                'PARENT_RESOURCE': PennTreebankRepo,
+                'DEFAULT_LOCATION': DEFAULT_LOCATION,
+                'CORPUS': name.lower(),
+                'SECTION': sect,
+                'DESCR_SHORT': descr,
+                'DESCR_LONG': descr,
+            }
+            new_class = type(src_class_name, (PTBSection,), attr_dict)
+            globals()[src_class_name] = new_class
 
-        descr = '%s section %s' % (name, sect)
-        class_name = '%sSection%s' % (name, sect)
-        MANIP = '%s%s' % (name.lower(), sect)
-        def body(self):
-            src_path = self.static_prereqs()[0].path
-            mrg = [os.path.join(src_path, p) for p in sorted(os.listdir(src_path)) if p.endswith('.mrg')]
+            descr = '%s section %s' % (name, sect)
+            class_name = '%sSection%s' % (name, sect)
+            MANIP = '%s%s' % (name.lower(), sect)
+            def body(self):
+                src_path = self.static_prereqs()[0].path
+                mrg = [os.path.join(src_path, p) for p in sorted(os.listdir(src_path)) if p.endswith('.mrg')]
 
-            out = "cat %s | perl %s | awk '/^\s*\(/' > %s" % (' '.join(mrg), self.static_prereqs()[1].path, self.path)
+                out = "cat %s | perl %s | awk '/^\s*\(/' > %s" % (' '.join(mrg), self.static_prereqs()[1].path, self.path)
 
-            return out
+                return out
 
-        attr_dict = {
-            'MANIP': MANIP,
-            'STATIC_PREREQ_TYPES': [globals()[src_class_name], 'scripts/editabletrees2linetrees.pl'],
-            'CORPUS': name.lower(),
-            'SECTION': sect,
-            'DESCR_SHORT': descr,
-            'DESCR_LONG': descr,
-            'body': body,
-        }
-        new_class = type(class_name, (LineTreesPTB,), attr_dict)
-        out.append(new_class)
-        globals()[class_name] = new_class
+            attr_dict = {
+                'MANIP': MANIP,
+                'STATIC_PREREQ_TYPES': [globals()[src_class_name], 'scripts/editabletrees2linetrees.pl'],
+                'CORPUS': name.lower(),
+                'SECTION': sect,
+                'DESCR_SHORT': descr,
+                'DESCR_LONG': descr,
+                'body': body,
+            }
+            new_class = type(class_name, (LineTreesPTB,), attr_dict)
+            out.append(new_class)
+            globals()[class_name] = new_class
 
-    return out
+        return out
 
 
 
