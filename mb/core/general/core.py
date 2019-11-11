@@ -299,7 +299,7 @@ def add_doc(cls, indent=0, indent_size=4):
             elif hasattr(x, 'infer_paths'):
                 name = x.infer_paths()[0]
             else:
-                name = x.__name__
+                name = x.syntax_str()
             out += ' ' * (indent) + '``%s``' % name
             if i == 0 and cls.repeatable_prereq():
                 out += ' (repeatable)'
