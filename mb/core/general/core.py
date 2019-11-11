@@ -278,9 +278,9 @@ def add_doc(cls, indent=0, indent_size=4):
     # out = '-' * 50 + '\n'
     out = ''
     for s in cls.descr_long().split('\n'):
-        out += ' ' * (indent + indent_size) + s + '\n'
+        out += ' ' * (indent) + s + '\n'
     if hasattr(cls, 'URL') and cls.url() is not None:
-        out += 'URL: [%s](%s)\n' % (cls.url(), cls.url())
+        out += '**URL**: [%s](%s)\n' % (cls.url(), cls.url())
     external_resources = [x for x in cls.static_prereq_types() if not isinstance(x, str) and issubclass(x, ExternalResource)]
     if len(external_resources) > 0:
         out += ' ' * indent + 'External resources:\n'
@@ -289,10 +289,10 @@ def add_doc(cls, indent=0, indent_size=4):
                 name = x
             else:
                 name = x.infer_paths()[0]
-            out += ' ' * (indent + indent_size) + '%s\n' % name
+            out += ' ' * (indent) + '``%s``\n' % name
     prereqs = cls.pattern_prereq_types() + cls.static_prereq_types() + cls.other_prereq_paths(None)
     if len(prereqs) > 0:
-        out += 'Prerequisites:\n'
+        out += '**Prerequisites**:\n'
         for i, x in enumerate(prereqs):
             if isinstance(x, str):
                 name = x
@@ -300,13 +300,13 @@ def add_doc(cls, indent=0, indent_size=4):
                 name = x.infer_paths()[0]
             else:
                 name = x.__name__
-            out += ' ' * (indent + indent_size) + '%s' % name
+            out += ' ' * (indent) + '``%s``' % name
             if i == 0 and cls.repeatable_prereq():
                 out += ' (repeatable)'
             out += '\n'
     if not cls.is_abstract():
-        out += ' ' * indent + 'Syntax:\n'
-        out += ' ' * (indent + indent_size) + cls.syntax_str()
+        out += ' ' * indent + '**Syntax**:\n'
+        out += ' ' * (indent) + '``%s``' % cls.syntax_str()
     out += '\n\n'
 
     cls.__doc__ = out
