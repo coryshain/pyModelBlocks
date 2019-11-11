@@ -5,23 +5,23 @@ Complete alphabetic API for all public classes and methods in this package, grou
 
 
 
-mb\.core\.general module
+mb\.core\.general\.core module
 -------------------
 
-.. automodule:: mb.core.general
+.. automodule:: mb.core.general.core
     :members:
     :show-inheritance:
 
-mb\.core\.tables module
+mb\.core\.general\.tables module
 -------------------
 
-.. automodule:: mb.core.tables
+.. automodule:: mb.core.general.tables
     :members:
     :show-inheritance:
 
-mb\.core\.text module
+mb\.core\.general\.text module
 -------------------
 
-.. automodule:: mb.core.text
+.. automodule:: mb.core.general.text
     :members:
     :show-inheritance:
