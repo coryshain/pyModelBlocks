@@ -51,7 +51,7 @@ def create_classes_from_ptb_dir(directory, name='WSJ'):
             out.append(new_class)
             globals()[class_name] = new_class
 
-        return out
+    return out
 
 
 
