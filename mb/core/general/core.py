@@ -207,7 +207,7 @@ def increment_delimiters(s):
     """
     Increase the depth of all delimiters in **s**.
     
-    :prm ``s``: str; the input string
+    :prm s: ``str``; the input string
     :return: ``str``; **s** with deeper delimiters (shifted towards the end of DELIM)
     """
     
@@ -278,9 +278,10 @@ def add_doc(cls, indent=0, indent_size=4):
     # out = '-' * 50 + '\n'
     out = ''
     for s in cls.descr_long().split('\n'):
-        out += ' ' * (indent) + s + '\n\n'
+        out += ' ' * (indent) + s + '\n'
+    out += '\n'
     if hasattr(cls, 'URL') and cls.url() is not None:
-        out += '**URL**: [%s](%s)\n' % (cls.url(), cls.url())
+        out += '**URL**: `%s <%s>` _\n\n' % (cls.url(), cls.url())
     external_resources = [x for x in cls.static_prereq_types() if not isinstance(x, str) and issubclass(x, ExternalResource)]
     if len(external_resources) > 0:
         out += ' ' * indent + 'External resources:\n\n'
@@ -294,16 +295,21 @@ def add_doc(cls, indent=0, indent_size=4):
     if len(prereqs) > 0:
         out += '**Prerequisites**:\n\n'
         for i, x in enumerate(prereqs):
+            out_cur = ' ' * (indent + indent_size) + '-'
             if isinstance(x, str):
                 name = x
             elif hasattr(x, 'infer_paths'):
                 name = x.infer_paths()[0]
             else:
-                name = x.syntax_str()
-            out += ' ' * (indent) + '``%s``' % name
+                if x.is_abstract():
+                    name = x.__name__
+                else:
+                    name = x.syntax_str()
+            out_cur += '``%s``' % name
+            out += out_cur
             if i == 0 and cls.repeatable_prereq():
                 out += ' (repeatable)'
-            out += '\n\n'
+            out += '\n'
     if not cls.is_abstract():
         out += ' ' * indent + '**Syntax**:\n\n'
         out += ' ' * (indent) + '``%s``' % cls.syntax_str()
