@@ -1,4 +1,4 @@
-from mb.core.regression.regression import *
+from mb.core.regression.core import *
 
 #####################################
 #
