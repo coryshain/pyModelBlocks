@@ -274,6 +274,62 @@ def other_prereq_type_err_msg(i, j):
     return 'Index %d must be < the number of other prereqs (%d)' % (i, j)
 
 
+def add_doc(cls, indent=0, indent_size=4):
+    # out = '-' * 50 + '\n'
+    out = ''
+    for s in cls.descr_long().split('\n'):
+        out += ' ' * (indent + indent_size) + s + '\n'
+    if hasattr(cls, 'URL') and cls.url() is not None:
+        out += 'URL: [%s](%s)\n' % (cls.url(), cls.url())
+    external_resources = [x for x in cls.static_prereq_types() if not isinstance(x, str) and issubclass(x, ExternalResource)]
+    if len(external_resources) > 0:
+        out += ' ' * indent + 'External resources:\n'
+        for x in external_resources:
+            if isinstance(x, str):
+                name = x
+            else:
+                name = x.infer_paths()[0]
+            out += ' ' * (indent + indent_size) + '%s\n' % name
+    prereqs = cls.pattern_prereq_types() + cls.static_prereq_types() + cls.other_prereq_paths(None)
+    if len(prereqs) > 0:
+        out += 'Prerequisites:\n'
+        for i, x in enumerate(prereqs):
+            if isinstance(x, str):
+                name = x
+            elif hasattr(x, 'infer_paths'):
+                name = x.infer_paths()[0]
+            else:
+                name = x.__name__
+            out += ' ' * (indent + indent_size) + '%s' % name
+            if i == 0 and cls.repeatable_prereq():
+                out += ' (repeatable)'
+            out += '\n'
+    if not cls.is_abstract():
+        out += ' ' * indent + 'Syntax:\n'
+        out += ' ' * (indent + indent_size) + cls.syntax_str()
+    out += '\n\n'
+
+    cls.__doc__ = out
+
+
+
+
+
+#####################################
+#
+# METATYPES
+#
+#####################################
+
+
+class typemb(type):
+    def __new__(meta, name, bases, dct):
+        cls = super(typemb, meta).__new__(meta, name, bases, dct)
+        add_doc(cls)
+
+        return cls
+
+
 
 
 
@@ -284,7 +340,7 @@ def other_prereq_type_err_msg(i, j):
 #####################################
 
 
-class MBType(object):
+class MBType(object, metaclass=typemb):
     SUFFIX = ''
     MANIP = ''
     PATTERN_PREREQ_TYPES = []
@@ -302,7 +358,7 @@ class MBType(object):
 
     DESCR_SHORT = 'data'
     DESCR_LONG = (
-        "Abstract base class for ModelBlocks types.\n"
+        "Abstract base class for ModelBlocks types."
     )
 
     def __init__(self, path):
@@ -666,35 +722,8 @@ class MBType(object):
         return out
 
     @classmethod
-    def report_api(cls):
-        out = '-' * 50 + '\n'
-        out += 'Class:                %s\n' % cls.__name__
-        if issubclass(cls, ExternalResource) and cls.url() is not None:
-            out += 'URL:                  %s\n' % cls.url()
-        out += 'Short description:    %s\n' % cls.descr_short()
-        out += 'Detailed description: %s\n' % cls.descr_long()
-        external_resources = [x for x in cls.static_prereq_types() if issubclass(x, ExternalResource)]
-        if len(external_resources) > 0:
-            out += 'External resources:\n'
-            for x in external_resources:
-                out += '  %s\n' % x.__name__
-        out += 'Prerequisites:\n'
-        for i, x in enumerate(cls.pattern_prereq_types()):
-            out += '  %s' % x.__name__
-            if i == 0 and cls.repeatable_prereq():
-                out += ' (repeatable)'
-            out += '\n'
-        for x in cls.other_prereq_paths(None):
-            out += '  %s\n' % x
-        out += '\n'
-        out += 'Syntax: ' + cls.syntax_str()
-        out += '\n\n'
-
-        return out
-
-    @classmethod
     def syntax_str(cls):
-        if issubclass(cls, StaticResource):
+        if hasattr(cls, 'infer_paths'):
             out = cls.infer_paths()[0]
         else:
             out = []
@@ -1101,7 +1130,7 @@ class Repo(ExternalResource):
     DESCR_LONG = (
         'A corpus of naturalistic stories meant to contain varied,\n'
         'low-frequency syntactic constructions. There are a variety of annotations\n'
-        'and psycholinguistic measures available for the stories.\n'
+        'and psycholinguistic measures available for the stories.'
     )
 
     @property
@@ -1126,7 +1155,7 @@ class Repo(ExternalResource):
             warn_str = (
                 '%s does not exist at the default path (%s),\n'
                 'but it is not publicly available and cannot be downloaded automatically.'
-                'You must first acquire it from the source.\n'
+                'You must first acquire it from the source.'
             ) % USER_SETTINGS.get(
                 type(self).__name__ + '_path',
                 DEFAULT_SETTINGS[type(self).__name__ + '_path']
@@ -1705,8 +1734,6 @@ class Graph(object):
     def report_failure(self, targets, indent=0):
         out = ''
 
-        affixes = ['prefix', 'suffix']
-
         max_num_len = len(str(len(targets)))
         for i, x in enumerate(targets):
             num_pad = max_num_len - len(str(i)) + 1
@@ -2006,3 +2033,6 @@ class Graph(object):
             out = None
 
         return out
+
+
+
